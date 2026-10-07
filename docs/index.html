@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Living Planner</title>
+<meta name="description" content="A bullet-journal style weekly planner for Firefox that shows your Google Calendar events and Google Tasks.">
+<link rel="icon" href="logo-120.png">
+<style>
+:root{--paper:#fdfcf8;--ink:#2b2b2b;--soft:#77756e;--accent:#d96c7a;--line:#e3e3d8}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.6 Inter,system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background-color:var(--paper);
+ background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);background-size:24px 24px}
+main{max-width:720px;margin:40px auto;padding:32px;background:var(--paper);border:2px solid #bdbdb4;border-radius:16px}
+header{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+header img{width:64px;height:64px}
+h1{font-size:28px;margin:0;letter-spacing:-.01em}
+h2{font-size:18px;margin:28px 0 6px}
+p,li{margin:6px 0}
+a{color:#b4475a}
+.tag{color:var(--soft);margin:0 0 20px}
+footer{margin-top:32px;color:var(--soft);font-size:13px}
+code{background:#f3f1e8;padding:1px 5px;border-radius:5px;font-size:14px}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="logo-120.png" alt="Living Planner logo">
+    <div><h1>Living Planner</h1><p class="tag" style="margin:0">A bullet-journal style weekly planner for Firefox</p></div>
+  </header>
+
+  <p>Living Planner is a personal Firefox extension that turns your week into a bullet-journal style spread on grid paper.
+  It shows your Google Calendar events, lets you keep a to-do list for each day using Google Tasks, and lets you decorate
+  the page with stickers, photos, notes, drawings and a habit tracker.</p>
+
+  <h2>What it does with your Google account</h2>
+  <ul>
+    <li><b>Google Calendar (read-only):</b> displays your events and calendars in the weekly view. It cannot change or delete events.</li>
+    <li><b>Google Tasks (read and write):</b> shows your to-dos on the day they're due, and lets you check them off, add them and rename them.</li>
+  </ul>
+  <p>Your data goes straight from Google to your own browser. There is no Living Planner server, and nothing is collected,
+  sold or shared. Read the <a href="privacy.html">Privacy Policy</a> for details.</p>
+
+  <h2>Features</h2>
+  <ul>
+    <li>Weekly timetable styled like a bullet journal, with a to-do row above each day</li>
+    <li>Habit tracker and weekly goals</li>
+    <li>Stickers, your own photos, rich text notes, and freehand pen and highlighter drawing</li>
+    <li>Custom fonts</li>
+  </ul>
+
+  <footer>Living Planner is an independent personal project. It is not affiliated with, endorsed by, or sponsored by Google.
+  Google Calendar and Google Tasks are trademarks of Google LLC.</footer>
+</main>
+</body>
+</html>
