@@ -1,4 +1,4 @@
-# Living GCal
+# bullet.ly
 
 A Firefox extension that opens a bullet-journal style weekly planner for Google Calendar:
 grid-paper spread, a bullet-journal to-do list (Google Tasks) above each day, a habit tracker on the side,
