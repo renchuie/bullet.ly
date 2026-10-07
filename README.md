@@ -2,7 +2,7 @@
 
 A Firefox extension that opens a bullet-journal style weekly planner for Google Calendar:
 grid-paper spread, a bullet-journal to-do list (Google Tasks) above each day, a habit tracker on the side,
-and decorations: emoji, your own photos as stickers, and free text notes. Fonts are changeable
+and decorations: emoji (full library), your own photos as stickers, rich text notes, and freehand pen/highlighter drawing. Fonts are changeable
 (including your own uploaded font file).
 
 **Status:** prototype. It runs on fake data (`src/mock-data.js`). Google sign-in is not wired up yet.

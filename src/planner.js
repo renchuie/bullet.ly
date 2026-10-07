@@ -4,7 +4,8 @@
   const START_HOUR = 6, END_HOUR = 23;
   const HOUR_H = 48;
   const MIN_TODO_ROWS = 7;
-  const EMOJI = ["🌸", "⭐", "💖", "🍓", "☕", "📚", "✨", "🎀", "🌙", "🐱", "🍀", "✏️"];
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const EMOJI_QUICK = ["🌸", "⭐", "💖", "🍓", "☕", "📚", "✨", "🎀", "🌙", "🐱", "🍀", "✏️"];
 
   const HAND_FONTS = [
     "Caveat", "Patrick Hand", "Kalam", "Gaegu", "Nanum Pen Script", "Shadows Into Light",
@@ -13,7 +14,11 @@
     "Sue Ellen Francisco", "Over the Rainbow", "Delicious Handrawn", "Mynerve",
     "Nothing You Could Do", "Homemade Apple", "Gloria Hallelujah",
   ];
-  const BODY_FONTS = ["Patrick Hand", "Quicksand", "Nunito", "Kalam", "Gaegu", "Handlee", "Architects Daughter"];
+  const BODY_FONTS = ["Patrick Hand", "Quicksand", "Nunito", "Kalam", "Gaegu", "Handlee", "Architects Daughter", "Inter"];
+
+  const INK_COLORS = ["#2b2b2b", "#d94b5a", "#e8833a", "#3b82c4", "#3a9d6b", "#8a5cc6", "#8b5e3c", "#ffffff"];
+  const MARKER_COLORS = ["#ffe14d", "#ff8fb1", "#7be0a1", "#7cc4ff", "#ffb066", "#c3a1ff"];
+  const HILITE_COLORS = ["#fff3a3", "#ffd1dc", "#c9f0d2", "#cfe6ff", "#ffe0b8", "#e6d6ff"];
 
   // bullet-journal task states; clicking the bullet cycles through them
   const STATES = [
@@ -21,6 +26,18 @@
     { id: "done", mark: "✓" },
     { id: "migrate", mark: ">" },
     { id: "cancel", mark: "×" },
+  ];
+
+  // Emoji picker: built from Unicode ranges so the whole single-character emoji set is covered.
+  const EMOJI_CATS = [
+    ["😀", "Smileys", [[0x1F600, 0x1F644], [0x1F910, 0x1F92F], [0x1F970, 0x1F97B], [0x1F9D0, 0x1F9D0]]],
+    ["👋", "People & body", [[0x1F440, 0x1F450], [0x1F466, 0x1F487], [0x1F645, 0x1F64F], [0x1F918, 0x1F91F], [0x1F930, 0x1F93A], [0x1F9B0, 0x1F9BF], [0x1F9D1, 0x1F9DF]]],
+    ["🐱", "Animals & nature", [[0x1F400, 0x1F43F], [0x1F980, 0x1F9AE], [0x1F331, 0x1F344], [0x1F490, 0x1F490], [0x1F300, 0x1F32C], [0x1F338, 0x1F33C]]],
+    ["🍓", "Food & drink", [[0x1F32D, 0x1F37F], [0x1F950, 0x1F96F], [0x1F9C0, 0x1F9CB]]],
+    ["⚽", "Activities", [[0x1F380, 0x1F3D3], [0x26BD, 0x26BE], [0x1F93B, 0x1F94F], [0x1F3F8, 0x1F3FA]]],
+    ["🚗", "Travel & places", [[0x1F680, 0x1F6FF], [0x1F3D4, 0x1F3DF], [0x1F3E0, 0x1F3F0], [0x1F5FA, 0x1F5FF]]],
+    ["💡", "Objects", [[0x1F4A1, 0x1F4FF], [0x1F50B, 0x1F52E], [0x1F5A5, 0x1F5A5], [0x231A, 0x231B], [0x23F0, 0x23F3], [0x1F9E0, 0x1F9FF], [0x1FA70, 0x1FAFF]]],
+    ["💖", "Symbols", [[0x1F493, 0x1F4A0], [0x2600, 0x27BF], [0x2B05, 0x2B55], [0x1F500, 0x1F50A], [0x1F534, 0x1F53D], [0x1F7E0, 0x1F7EB], [0x1F90D, 0x1F90E], [0x1F5A4, 0x1F5A4]]],
   ];
 
   // ---------- tiny helpers ----------
@@ -36,16 +53,30 @@
   };
   const save = (key, val) => { try { localStorage.setItem(key, JSON.stringify(val)); } catch {} };
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const round1 = (v) => Math.round(v * 10) / 10;
 
   const startOfWeek = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - x.getDay()); return x; };
   const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
   const sameDay = (a, b) => a.toDateString() === b.toDateString();
   const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-  const fmtHour = (h) => (h % 12 === 0 ? 12 : h % 12) + (h < 12 || h === 24 ? " AM" : " PM");
+  const fmtHour = (h) => (h % 12 === 0 ? 12 : h % 12) + (h < 12 ? " AM" : " PM");
   const fmtTime = (t) => {
     const h = Math.floor(t), m = Math.round((t - h) * 60);
     return (h % 12 === 0 ? 12 : h % 12) + (m ? ":" + String(m).padStart(2, "0") : "") + (h < 12 ? "am" : "pm");
   };
+
+  // Swap a label for a text box. commit(value) gets the new text, "" if cleared, or null if cancelled.
+  function inlineEdit(node, value, commit, placeholder) {
+    const input = el("input");
+    input.value = value;
+    if (placeholder) input.placeholder = placeholder;
+    let done = false;
+    const finish = (ok) => { if (done) return; done = true; commit(ok ? input.value.trim() : null); };
+    input.onblur = () => finish(true);
+    input.onkeydown = (e) => { if (e.key === "Enter") finish(true); if (e.key === "Escape") finish(false); };
+    node.replaceWith(input);
+    input.focus(); input.select();
+  }
 
   // ---------- IndexedDB (photos + uploaded fonts are too big for localStorage) ----------
   const dbPromise = new Promise((resolve, reject) => {
@@ -72,7 +103,10 @@
   // ---------- state ----------
   let weekStart = startOfWeek(new Date());
   let decorating = false;
-  let focusNewTask = null; // date key whose "new to-do" box should get focus after a re-render
+  let tool = "move"; // move | pen | marker | eraser
+  let focusNewTask = null;
+  const pen = { color: INK_COLORS[0], width: 3 };
+  const marker = { color: MARKER_COLORS[0], width: 20 };
   const hiddenCals = new Set(load("hiddenCals", []));
   const calColor = Object.fromEntries(MOCK.calendars.map((c) => [c.id, c.color]));
   const weekKey = () => dateKey(weekStart);
@@ -116,6 +150,7 @@
     const f = applyFonts();
     fillFontSelect($("hand-font"), HAND_FONTS, f.hand, "hand");
     fillFontSelect($("body-font"), BODY_FONTS, f.body, "body");
+    fillNoteFontSelect();
   }
 
   async function registerUserFont(rec) {
@@ -193,27 +228,15 @@
           t.state = next.id; save("tasks2", tasks); renderTodos();
         };
         const txt = el("span", "txt", t.title);
-        txt.onclick = () => {
-          const input = el("input"); input.value = t.title;
-          let finished = false;
-          const finish = (commit) => {
-            if (finished) return; finished = true;
-            if (commit) {
-              const v = input.value.trim();
-              if (v) t.title = v; else tasks.splice(tasks.indexOf(t), 1);
-              save("tasks2", tasks);
-            }
-            renderTodos();
-          };
-          input.onblur = () => finish(true);
-          input.onkeydown = (e) => { if (e.key === "Enter") finish(true); if (e.key === "Escape") finish(false); };
-          txt.replaceWith(input); input.focus();
-        };
+        txt.onclick = () => inlineEdit(txt, t.title, (v) => {
+          if (v !== null) { if (v) t.title = v; else tasks.splice(tasks.indexOf(t), 1); save("tasks2", tasks); }
+          renderTodos();
+        });
         line.append(mark, txt);
         cell.append(line);
       });
 
-      // the next blank ruled line is where you type a new to-do
+      // the next blank line is where you type a new to-do
       const newLine = el("div", "todo-line new");
       newLine.append(el("span", "mark", "•"));
       const input = el("input"); input.placeholder = "add to-do…";
@@ -276,7 +299,8 @@
     const tl = $("timeline");
     tl.replaceChildren();
     const hours = el("div", "hours");
-    for (let h = START_HOUR; h <= END_HOUR; h++) {
+    // labels sit just under their hour line; the grid draws the lines itself
+    for (let h = START_HOUR; h < END_HOUR; h++) {
       const lab = el("div", "h", fmtHour(h));
       lab.style.top = (h - START_HOUR) * HOUR_H + "px";
       hours.append(lab);
@@ -287,11 +311,6 @@
     for (let i = 0; i < 7; i++) {
       const d = addDays(weekStart, i);
       const col = el("div", "day-col" + (sameDay(d, now) ? " today" : ""));
-      for (let h = START_HOUR; h <= END_HOUR; h++) {
-        const line = el("div", "hline");
-        line.style.top = (h - START_HOUR) * HOUR_H + "px";
-        col.append(line);
-      }
       const evs = MOCK.events.filter((e) => e.day === i && !hiddenCals.has(e.cal)).map((e) => ({ ...e }));
       layoutLanes(evs).forEach((e) => {
         const box = el("div", "event");
@@ -361,42 +380,114 @@
     });
   }
 
+  // ---------- weekly goals & habits (both editable) ----------
   function renderGoals() {
     const ul = $("goals");
-    const key = "goals:" + weekKey();
-    const state = load(key, MOCK.goals.map((g) => ({ title: g, done: false })));
+    const key = "goals2:" + weekKey();
+    const goals = load(key, MOCK.goals.map((g, i) => ({ id: "g" + i, title: g, done: false })));
     ul.replaceChildren();
-    state.forEach((g) => {
+    goals.forEach((g) => {
       const li = el("li", g.done ? "done" : "");
-      li.append(el("span", null, g.done ? "✓" : "○"), el("span", null, g.title));
-      li.onclick = () => { g.done = !g.done; save(key, state); renderGoals(); };
+      const mark = el("button", "mark", g.done ? "✓" : "○");
+      mark.onclick = () => { g.done = !g.done; save(key, goals); renderGoals(); };
+      const txt = el("span", "txt", g.title);
+      txt.title = "Click to edit (clear the text to delete)";
+      txt.onclick = () => inlineEdit(txt, g.title, (v) => {
+        if (v !== null) { if (v) g.title = v; else goals.splice(goals.indexOf(g), 1); save(key, goals); }
+        renderGoals();
+      });
+      li.append(mark, txt);
       ul.append(li);
     });
+    const li = el("li");
+    const add = el("button", "add-link", "+ Add goal");
+    add.onclick = () => inlineEdit(add, "", (v) => {
+      if (v) { goals.push({ id: "g" + Date.now(), title: v, done: false }); save(key, goals); }
+      renderGoals();
+    }, "new goal…");
+    li.append(add);
+    ul.append(li);
   }
 
   function renderHabits() {
     const box = $("habits");
-    const key = "habits:" + weekKey();
-    const state = load(key, {});
+    const stateKey = "habits:" + weekKey();
+    const state = load(stateKey, {});
+    const habits = load("habitList", MOCK.habits.map((n) => ({ id: n, name: n })));
     box.replaceChildren();
-    MOCK.habits.forEach((name) => {
+
+    habits.forEach((h) => {
       const wrap = el("div", "habit");
-      wrap.append(el("div", "name", name));
+      const head = el("div", "hhead");
+      const name = el("span", "name", h.name);
+      name.title = "Click to rename";
+      name.onclick = () => inlineEdit(name, h.name, (v) => {
+        if (v) { h.name = v; save("habitList", habits); }
+        renderHabits();
+      });
+      const del = el("button", "hdel", "×"); del.title = "Remove habit";
+      del.onclick = () => {
+        if (!confirm(`Remove the habit "${h.name}"?`)) return;
+        habits.splice(habits.indexOf(h), 1); save("habitList", habits); renderHabits();
+      };
+      head.append(name, del);
+
       const days = el("div", "days");
       for (let i = 0; i < 7; i++) {
-        const on = !!(state[name] && state[name][i]);
+        const on = !!(state[h.id] && state[h.id][i]);
         const d = el("div", "d" + (on ? " on" : ""), on ? "✿" : "SMTWTFS"[i]);
         d.onclick = () => {
-          state[name] = state[name] || {};
-          state[name][i] = !state[name][i];
-          save(key, state); renderHabits();
+          state[h.id] = state[h.id] || {};
+          state[h.id][i] = !state[h.id][i];
+          save(stateKey, state); renderHabits();
         };
         days.append(d);
       }
-      wrap.append(days);
+      wrap.append(head, days);
       box.append(wrap);
     });
+
+    const add = el("button", "add-link", "+ Add habit");
+    add.onclick = () => inlineEdit(add, "", (v) => {
+      if (v) { habits.push({ id: "h" + Date.now(), name: v }); save("habitList", habits); }
+      renderHabits();
+    }, "habit name…");
+    box.append(add);
   }
+
+  // ---------- rich text for text boxes ----------
+  const ALLOWED_TAGS = new Set(["B", "STRONG", "I", "EM", "U", "S", "STRIKE", "SPAN", "DIV", "P", "BR", "FONT"]);
+  const SAFE_STYLE_PROPS = /^(color|background-color|text-align|font-weight|font-style|text-decoration(-line)?|font-family|font-size)$/;
+  const SAFE_VALUE = /^[#\w\s"',.()%-]+$/;
+  function safeStyle(css) {
+    return css.split(";").map((x) => x.trim()).filter((x) => {
+      const i = x.indexOf(":");
+      return i > 0 && SAFE_STYLE_PROPS.test(x.slice(0, i).trim()) && SAFE_VALUE.test(x.slice(i + 1).trim());
+    }).join("; ");
+  }
+  // Rebuild saved note HTML keeping only harmless formatting tags and styles.
+  function sanitizeInto(parent, src) {
+    for (const n of src.childNodes) {
+      if (n.nodeType === 3) parent.append(document.createTextNode(n.nodeValue));
+      else if (n.nodeType === 1) {
+        if (!ALLOWED_TAGS.has(n.tagName)) { sanitizeInto(parent, n); continue; }
+        const c = document.createElement(n.tagName.toLowerCase());
+        const st = n.getAttribute("style");
+        if (st && safeStyle(st)) c.setAttribute("style", safeStyle(st));
+        if (n.tagName === "FONT") for (const a of ["color", "face"]) {
+          const v = n.getAttribute(a);
+          if (v && SAFE_VALUE.test(v)) c.setAttribute(a, v);
+        }
+        sanitizeInto(c, n);
+        parent.append(c);
+      }
+    }
+  }
+  function fillNote(node, html) {
+    node.replaceChildren();
+    sanitizeInto(node, new DOMParser().parseFromString(html || "", "text/html").body);
+  }
+  const noteIsEmpty = (html) => !new DOMParser().parseFromString(html || "", "text/html").body.textContent.trim();
 
   // ---------- decorations: emoji, photos, text ----------
   // Positions are stored as percentages of the spread so they survive window resizes.
@@ -425,10 +516,20 @@
   }
 
   const stickerKey = () => "stickers:" + weekKey();
+  const moveMode = () => decorating && tool === "move";
+
+  // active text box (for the formatting bar)
+  let activeNote = null;
+  let savedRange = null;
+  document.addEventListener("selectionchange", () => {
+    if (!activeNote) return;
+    const sel = getSelection();
+    if (sel.rangeCount && activeNote.body.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
+  });
 
   function pointerDrag(handle, onStart, onMove, onEnd) {
     handle.onpointerdown = (ev) => {
-      if (!decorating) return;
+      if (!moveMode()) return;
       ev.preventDefault(); ev.stopPropagation();
       handle.setPointerCapture(ev.pointerId);
       const ctx = onStart(ev);
@@ -441,40 +542,60 @@
     const persist = () => save(stickerKey(), list);
     const node = el("div", "deco deco-" + s.kind);
     node.style.left = s.x + "%"; node.style.top = s.y + "%";
+    const applyRot = () => { node.style.transform = `rotate(${s.rot || 0}deg)`; };
+    applyRot();
 
-    let body, applySize;
+    let body, applySize, getSize, setSize, limits;
     if (s.kind === "emoji") {
       body = el("div", "emoji", s.emoji);
       applySize = () => { body.style.fontSize = s.size + "px"; };
+      getSize = () => s.size; setSize = (v) => { s.size = v; }; limits = [14, 320];
     } else if (s.kind === "img") {
       body = el("img", "photo");
       body.draggable = false;
       if (!s.alpha) body.classList.add("bordered");
       imageURL(s.imgId).then((u) => { if (u) body.src = u; else node.remove(); }).catch(() => node.remove());
       applySize = () => { body.style.width = s.w + "px"; };
+      getSize = () => s.w; setSize = (v) => { s.w = v; }; limits = [30, 900];
     } else {
-      body = el("div", "note", s.text);
-      body.contentEditable = decorating ? "true" : "false";
-      body.style.color = s.color;
-      body.oninput = () => { s.text = body.innerText; persist(); };
+      body = el("div", "note");
+      fillNote(body, s.html);
+      body.contentEditable = moveMode() ? "true" : "false";
+      body.oninput = () => { s.html = body.innerHTML; persist(); };
       body.onpaste = (e) => { e.preventDefault(); document.execCommand("insertText", false, e.clipboardData.getData("text/plain")); };
-      applySize = () => { body.style.fontSize = s.size + "px"; };
+      body.onfocus = () => setActiveNote({ body, s, persist });
+      body.onblur = () => setTimeout(() => {
+        if (activeNote && activeNote.body === body && document.activeElement !== body && !$("subbar").contains(document.activeElement)) setActiveNote(null);
+      }, 0);
+      applySize = () => { body.style.width = s.w + "px"; body.style.fontSize = s.size + "px"; };
+      getSize = () => s.w; setSize = (v) => { s.w = v; }; limits = [60, 800];
     }
     applySize();
     node.append(body);
 
     const del = el("div", "hdl h-del", "×"); del.title = "Remove";
-    del.onclick = () => { list.splice(list.indexOf(s), 1); persist(); node.remove(); };
-    const size = el("div", "hdl h-size", "⇲"); size.title = "Drag to resize";
-    node.append(del, size);
+    del.onclick = () => { list.splice(list.indexOf(s), 1); persist(); if (activeNote && activeNote.body === body) setActiveNote(null); node.remove(); };
+    const size = el("div", "hdl h-size", "⇲"); size.title = s.kind === "text" ? "Drag to resize the box" : "Drag to resize";
+    const rot = el("div", "hdl h-rot", "↻"); rot.title = "Drag to rotate (hold Shift to snap)";
+    node.append(del, size, rot);
 
+    const center = () => { const r = node.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; };
+
+    // resize by distance from the center, so it also works when rotated
     pointerDrag(size,
-      (ev) => ({ x0: ev.clientX, start: s.kind === "img" ? s.w : s.size }),
+      (ev) => { const [cx, cy] = center(); return { cx, cy, d0: Math.hypot(ev.clientX - cx, ev.clientY - cy) || 1, v0: getSize() }; },
       (m, c) => {
-        const dx = m.clientX - c.x0;
-        if (s.kind === "img") s.w = clamp(c.start + dx, 40, 700);
-        else s.size = clamp(c.start + dx * 0.4, 12, 160);
+        setSize(clamp(c.v0 * (Math.hypot(m.clientX - c.cx, m.clientY - c.cy) / c.d0), limits[0], limits[1]));
         applySize();
+      }, persist);
+
+    pointerDrag(rot,
+      (ev) => { const [cx, cy] = center(); return { cx, cy, a0: Math.atan2(ev.clientY - cy, ev.clientX - cx), r0: s.rot || 0 }; },
+      (m, c) => {
+        let deg = c.r0 + ((Math.atan2(m.clientY - c.cy, m.clientX - c.cx) - c.a0) * 180) / Math.PI;
+        if (m.shiftKey) deg = Math.round(deg / 15) * 15;
+        s.rot = Math.round(deg * 10) / 10;
+        applyRot();
       }, persist);
 
     // photos/emoji drag by their body; text boxes drag by a small handle so the text stays editable
@@ -501,25 +622,287 @@
 
   function addDeco(item) {
     const list = load(stickerKey(), []);
-    list.push({ x: 35 + Math.random() * 20, y: 25 + Math.random() * 20, ...item });
+    list.push({ x: 35 + Math.random() * 20, y: 25 + Math.random() * 20, rot: 0, ...item });
     save(stickerKey(), list);
     renderStickers();
-    return list.length - 1;
+  }
+
+  // ---------- drawing (pen, highlighter, eraser) ----------
+  const inkKey = () => "ink:" + weekKey();
+  function pathD(p) {
+    if (p.length < 4) return `M${p[0]} ${p[1]} L${p[0] + 0.01} ${p[1]}`;
+    let d = `M${p[0]} ${p[1]}`;
+    for (let i = 2; i < p.length - 2; i += 2) d += ` Q${p[i]} ${p[i + 1]} ${(p[i] + p[i + 2]) / 2} ${(p[i + 1] + p[i + 3]) / 2}`;
+    return d + ` L${p[p.length - 2]} ${p[p.length - 1]}`;
+  }
+  function strokePath(s) {
+    const path = document.createElementNS(SVG_NS, "path");
+    path.setAttribute("d", pathD(s.p));
+    path.setAttribute("stroke", s.c);
+    path.setAttribute("stroke-width", s.w);
+    if (s.t === "marker") path.setAttribute("class", "marker");
+    return path;
+  }
+  function renderInk() {
+    $("ink-layer").replaceChildren(...load(inkKey(), []).map(strokePath));
+  }
+
+  function setupInk() {
+    const svg = $("ink-layer");
+    const erase = (e, rect) => {
+      const list = load(inkKey(), []);
+      const px = e.clientX - rect.left, py = e.clientY - rect.top;
+      const keep = list.filter((s) => {
+        const r = 10 + s.w / 2;
+        for (let i = 0; i < s.p.length; i += 2) {
+          const dx = (s.p[i] / 1000) * rect.width - px, dy = (s.p[i + 1] / 1000) * rect.height - py;
+          if (dx * dx + dy * dy < r * r) return false;
+        }
+        return true;
+      });
+      if (keep.length !== list.length) { save(inkKey(), keep); renderInk(); }
+    };
+
+    svg.onpointerdown = (ev) => {
+      if (tool === "move") return;
+      ev.preventDefault();
+      svg.setPointerCapture(ev.pointerId);
+      const rect = $("spread").getBoundingClientRect();
+      const norm = (e) => [round1(((e.clientX - rect.left) / rect.width) * 1000), round1(((e.clientY - rect.top) / rect.height) * 1000)];
+      const end = () => { svg.onpointermove = null; svg.onpointerup = null; };
+
+      if (tool === "eraser") {
+        erase(ev, rect);
+        svg.onpointermove = (m) => erase(m, rect);
+        svg.onpointerup = end;
+        return;
+      }
+      const cfg = tool === "marker" ? marker : pen;
+      const stroke = { t: tool, c: cfg.color, w: cfg.width, p: norm(ev) };
+      const path = strokePath(stroke);
+      svg.append(path);
+      svg.onpointermove = (m) => {
+        const [x, y] = norm(m);
+        const n = stroke.p.length;
+        const dx = ((x - stroke.p[n - 2]) / 1000) * rect.width, dy = ((y - stroke.p[n - 1]) / 1000) * rect.height;
+        if (dx * dx + dy * dy < 2) return;
+        stroke.p.push(x, y);
+        path.setAttribute("d", pathD(stroke.p));
+      };
+      svg.onpointerup = () => {
+        end();
+        const list = load(inkKey(), []);
+        list.push(stroke); save(inkKey(), list);
+      };
+    };
+  }
+
+  // ---------- dock: tray, text bar, draw bar, emoji panel ----------
+  const toolbarBtn = (label, title, onclick, cls) => {
+    const b = el("button", cls || "tb", label);
+    b.title = title || "";
+    b.onmousedown = (e) => e.preventDefault(); // keep the text selection while formatting
+    b.onclick = onclick;
+    return b;
+  };
+  const swatch = (color, onclick, on) => {
+    const b = el("button", "sw" + (on ? " on" : "") + (color === "transparent" ? " none" : ""));
+    if (color !== "transparent") b.style.background = color;
+    b.onmousedown = (e) => e.preventDefault();
+    b.onclick = onclick;
+    return b;
+  };
+
+  function formatCmd(name, value) {
+    if (!activeNote) return;
+    activeNote.body.focus();
+    document.execCommand("styleWithCSS", false, true);
+    document.execCommand(name, false, value);
+    activeNote.s.html = activeNote.body.innerHTML;
+    activeNote.persist();
+  }
+
+  function fillNoteFontSelect() {
+    const sel = document.getElementById("note-font");
+    if (!sel) return;
+    sel.replaceChildren(el("option", null, "Font…"));
+    sel.firstChild.value = "";
+    const names = [...new Set([...HAND_FONTS, "Inter"])];
+    names.forEach((n) => { const o = el("option", null, n); o.value = n; o.style.fontFamily = fontStack(n, "hand"); sel.append(o); });
+    userFonts.forEach((u) => { const o = el("option", null, "★ " + u.name); o.value = u.family; sel.append(o); });
+  }
+
+  function buildTextBar() {
+    const bar = $("textbar");
+    const font = el("select"); font.id = "note-font"; font.title = "Font for the selected text";
+    font.onchange = () => {
+      if (!font.value || !activeNote) return;
+      activeNote.body.focus();
+      if (savedRange) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); }
+      formatCmd("fontName", font.value);
+      font.value = "";
+    };
+    const sizeBtn = (label, delta, title) => toolbarBtn(label, title, () => {
+      if (!activeNote) return;
+      activeNote.s.size = clamp((activeNote.s.size || 24) + delta, 10, 120);
+      activeNote.body.style.fontSize = activeNote.s.size + "px";
+      activeNote.persist();
+    });
+    bar.append(
+      font, sizeBtn("A−", -2, "Smaller text"), sizeBtn("A+", 2, "Bigger text"), el("div", "sep"),
+      toolbarBtn("B", "Bold", () => formatCmd("bold")),
+      toolbarBtn("I", "Italic", () => formatCmd("italic")),
+      toolbarBtn("U", "Underline", () => formatCmd("underline")),
+      el("div", "sep"),
+      toolbarBtn("⇤", "Align left", () => formatCmd("justifyLeft")),
+      toolbarBtn("↔", "Center", () => formatCmd("justifyCenter")),
+      toolbarBtn("⇥", "Align right", () => formatCmd("justifyRight")),
+      el("div", "sep"), el("span", "lbl", "Color"),
+      ...INK_COLORS.map((c) => swatch(c, () => formatCmd("foreColor", c))),
+      el("div", "sep"), el("span", "lbl", "Highlight"),
+      ...HILITE_COLORS.map((c) => swatch(c, () => formatCmd("hiliteColor", c))),
+      swatch("transparent", () => formatCmd("hiliteColor", "transparent")),
+    );
+    // bold/italic/underline need their own look
+    bar.children[5].style.fontWeight = "700"; bar.children[6].style.fontStyle = "italic"; bar.children[7].style.textDecoration = "underline";
+    fillNoteFontSelect();
+  }
+
+  function renderDrawBar() {
+    const bar = $("drawbar");
+    bar.replaceChildren();
+    if (tool === "pen" || tool === "marker") {
+      const cfg = tool === "marker" ? marker : pen;
+      const colors = tool === "marker" ? MARKER_COLORS : INK_COLORS;
+      colors.forEach((c) => bar.append(swatch(c, () => { cfg.color = c; renderDrawBar(); }, cfg.color === c)));
+      const range = el("input"); range.type = "range";
+      range.min = tool === "marker" ? 8 : 1; range.max = tool === "marker" ? 40 : 14; range.value = cfg.width;
+      range.title = "Thickness";
+      range.oninput = () => { cfg.width = +range.value; };
+      bar.append(el("span", "lbl", "Thin"), range, el("span", "lbl", "Thick"));
+    } else {
+      bar.append(el("span", "lbl", "Drag over a drawing to erase it"));
+    }
+    bar.append(el("div", "sep"),
+      toolbarBtn("↶ Undo", "Remove the last stroke", () => {
+        const list = load(inkKey(), []); list.pop(); save(inkKey(), list); renderInk();
+      }),
+      toolbarBtn("Clear all", "Remove every drawing on this week", () => {
+        if (confirm("Erase all drawings on this week?")) { save(inkKey(), []); renderInk(); }
+      }));
+  }
+
+  function updateSubbar() {
+    const drawing = tool !== "move";
+    $("textbar").hidden = !(tool === "move" && activeNote);
+    $("drawbar").hidden = !drawing;
+    $("subbar").hidden = $("textbar").hidden && $("drawbar").hidden;
+  }
+
+  function setActiveNote(n) { activeNote = n; if (!n) savedRange = null; updateSubbar(); }
+
+  function setTool(t) {
+    tool = t;
+    for (const name of ["move", "pen", "marker", "eraser"]) document.body.classList.toggle("tool-" + name, name === t);
+    if (t !== "move") setActiveNote(null);
+    renderDrawBar();
+    updateSubbar();
+    renderStickers(); // text boxes are only editable in "move" mode
+    renderTrayTools();
+  }
+
+  // emoji library
+  let emojiCache = null;
+  function emojiCategories() {
+    if (emojiCache) return emojiCache;
+    const isEmoji = /^\p{Emoji}$/u, isModifier = /\p{Emoji_Modifier}/u;
+    const seen = new Set();
+    emojiCache = EMOJI_CATS.map(([icon, name, ranges]) => {
+      const items = [];
+      for (const [a, b] of ranges) for (let cp = a; cp <= b; cp++) {
+        if (seen.has(cp)) continue;
+        const ch = String.fromCodePoint(cp);
+        if (!isEmoji.test(ch) || isModifier.test(ch)) continue;
+        seen.add(cp);
+        items.push(ch + "️");
+      }
+      return { icon, name, items };
+    });
+    return emojiCache;
+  }
+
+  let emojiTab = 0;
+  function pickEmoji(emoji) {
+    const recent = [emoji, ...load("recentEmoji", []).filter((e) => e !== emoji)].slice(0, 30);
+    save("recentEmoji", recent);
+    addDeco({ kind: "emoji", emoji, size: 44 });
+  }
+  function renderEmojiPanel() {
+    const panel = $("emoji-panel");
+    const cats = [{ icon: "🕘", name: "Recently used", items: load("recentEmoji", []) }, ...emojiCategories()];
+    emojiTab = Math.min(emojiTab, cats.length - 1);
+    const tabs = el("div", "etabs");
+    cats.forEach((c, i) => {
+      const b = el("button", i === emojiTab ? "on" : "", c.icon);
+      b.title = c.name;
+      b.onclick = () => { emojiTab = i; renderEmojiPanel(); };
+      tabs.append(b);
+    });
+    const grid = el("div", "egrid");
+    cats[emojiTab].items.forEach((e) => { const b = el("button", null, e); b.onclick = () => pickEmoji(e); grid.append(b); });
+    if (!cats[emojiTab].items.length) grid.append(el("p", "muted", "Nothing here yet. Emoji you use will show up here."));
+    const paste = el("div", "epaste");
+    const input = el("input"); input.placeholder = "Or type / paste any emoji (Win + . or Ctrl + Cmd + Space)";
+    const add = el("button", "pill", "Add");
+    const submit = () => { const v = input.value.trim(); if (v) { pickEmoji(v); input.value = ""; } };
+    add.onclick = submit; input.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+    paste.append(input, add);
+    panel.replaceChildren(tabs, el("p", "ename", cats[emojiTab].name), grid, paste);
+  }
+
+  function renderTrayTools() {
+    document.querySelectorAll("#tray [data-tool]").forEach((b) => b.classList.toggle("on", b.dataset.tool === tool));
   }
 
   async function renderTray() {
     const tray = $("tray");
     tray.replaceChildren();
-    EMOJI.forEach((emoji) => {
-      const b = el("button", "emo", emoji);
-      b.onclick = () => addDeco({ kind: "emoji", emoji, size: 40 });
+    [["move", "☝ Move"], ["pen", "✏️ Pen"], ["marker", "🖍 Highlighter"], ["eraser", "⌫ Eraser"]].forEach(([id, label]) => {
+      const b = el("button", "pill" + (tool === id ? " on" : ""), label);
+      b.dataset.tool = id; b.onclick = () => setTool(id);
       tray.append(b);
     });
     tray.append(el("div", "sep"));
 
+    const addText = el("button", "pill", "Aa Text");
+    addText.onclick = () => {
+      if (tool !== "move") setTool("move");
+      addDeco({ kind: "text", html: "type here", size: 24, w: 220 });
+      const notes = document.querySelectorAll(".deco-text .note");
+      const last = notes[notes.length - 1];
+      if (last) { last.focus(); getSelection().selectAllChildren(last); }
+    };
+    const addPhoto = el("button", "pill", "＋ Photo");
+    addPhoto.onclick = () => $("photo-file").click();
+    tray.append(addText, addPhoto, el("div", "sep"));
+
+    EMOJI_QUICK.forEach((emoji) => {
+      const b = el("button", "emo", emoji);
+      b.onclick = () => addDeco({ kind: "emoji", emoji, size: 44 });
+      tray.append(b);
+    });
+    const more = el("button", "pill", "😀 All emoji");
+    more.onclick = () => {
+      const panel = $("emoji-panel");
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) renderEmojiPanel();
+    };
+    tray.append(more);
+
     // photos you've uploaded earlier
     let imgs = [];
     try { imgs = await dbDo("images", "readonly", (s) => s.getAll()); } catch {}
+    if (imgs && imgs.length) tray.append(el("div", "sep"));
     for (const rec of imgs || []) {
       const wrap = el("div", "thumb");
       const img = el("img"); img.title = rec.name || "photo";
@@ -536,20 +919,6 @@
       wrap.append(img, x);
       tray.append(wrap);
     }
-    const addPhoto = el("button", "pill", "＋ Photo");
-    addPhoto.onclick = () => $("photo-file").click();
-    tray.append(addPhoto, el("div", "sep"));
-
-    const color = el("input"); color.type = "color"; color.value = load("noteColor", "#2b2b2b"); color.title = "Text color";
-    color.oninput = () => save("noteColor", color.value);
-    const addText = el("button", "pill", "Aa Text");
-    addText.onclick = () => {
-      addDeco({ kind: "text", text: "type here", size: 26, color: color.value });
-      const notes = document.querySelectorAll(".deco-text .note");
-      const last = notes[notes.length - 1];
-      if (last) { last.focus(); document.getSelection().selectAllChildren(last); }
-    };
-    tray.append(addText, color, el("span", "hint", "drag to move · corner handles resize or remove"));
   }
 
   function setupDecorating() {
@@ -563,29 +932,37 @@
     };
     $("sticker-toggle").onclick = () => {
       decorating = !decorating;
-      if (!decorating) { // tidy up empty text boxes when you finish decorating
-        const list = load(stickerKey(), []).filter((s) => s.kind !== "text" || s.text.trim());
-        save(stickerKey(), list);
+      if (!decorating) {
+        setTool("move");
+        setActiveNote(null);
+        $("emoji-panel").hidden = true;
+        // tidy up empty text boxes when you finish decorating
+        save(stickerKey(), load(stickerKey(), []).filter((s) => s.kind !== "text" || !noteIsEmpty(s.html)));
       }
-      $("tray").hidden = !decorating;
+      $("dock").hidden = !decorating;
       document.body.classList.toggle("decorating", decorating);
       $("sticker-toggle").classList.toggle("on", decorating);
       $("sticker-toggle").textContent = decorating ? "✓ Done" : "✿ Decorate";
       renderStickers();
     };
+    buildTextBar();
+    renderDrawBar();
     renderTray();
+    setupInk();
   }
 
   // ---------- wiring ----------
   function render() {
     renderTitle(); renderHead(); renderTodos(); renderAllDay(); renderTimeline();
-    renderMiniCal(); renderCalList(); renderGoals(); renderHabits(); renderStickers();
+    renderMiniCal(); renderCalList(); renderGoals(); renderHabits(); renderInk(); renderStickers();
   }
 
-  $("today-btn").onclick = () => { weekStart = startOfWeek(new Date()); render(); };
-  $("prev-btn").onclick = () => { weekStart = addDays(weekStart, -7); render(); };
-  $("next-btn").onclick = () => { weekStart = addDays(weekStart, 7); render(); };
+  const changeWeek = (d) => { setActiveNote(null); weekStart = d; render(); };
+  $("today-btn").onclick = () => changeWeek(startOfWeek(new Date()));
+  $("prev-btn").onclick = () => changeWeek(addDays(weekStart, -7));
+  $("next-btn").onclick = () => changeWeek(addDays(weekStart, 7));
 
+  document.body.classList.add("tool-move");
   setupFonts();
   setupDecorating();
   render();
