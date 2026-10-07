@@ -5,7 +5,8 @@
   <title>Living GCal</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Patrick+Hand&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Patrick+Hand&family=Kalam:wght@400;700&family=Gaegu:wght@400;700&family=Nanum+Pen+Script&family=Shadows+Into+Light&family=Reenie+Beanie&family=Indie+Flower&family=Handlee&family=Gochi+Hand&family=Architects+Daughter&family=Covered+By+Your+Grace&family=Just+Another+Hand&family=Schoolbell&family=Short+Stack&family=Sue+Ellen+Francisco&family=Over+the+Rainbow&family=Delicious+Handrawn&family=Mynerve&family=Nothing+You+Could+Do&family=Homemade+Apple&family=Gloria+Hallelujah&family=Quicksand:wght@500;700&family=Nunito:wght@500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="planner.css">
 </head>
 <body>
@@ -15,8 +16,22 @@
     <button id="prev-btn" class="icon-btn" aria-label="Previous week">‹</button>
     <button id="next-btn" class="icon-btn" aria-label="Next week">›</button>
     <h1 id="title"></h1>
+    <button id="font-btn" class="pill">Aa Fonts</button>
     <button id="sticker-toggle" class="pill">✿ Decorate</button>
   </header>
+
+  <div class="font-panel card" id="font-panel" hidden>
+    <h2>Fonts</h2>
+    <label>Handwriting (dates, to-dos, notes)
+      <select id="hand-font"></select>
+    </label>
+    <label>Event text
+      <select id="body-font"></select>
+    </label>
+    <button id="font-upload-btn" class="pill">Upload my own font…</button>
+    <input type="file" id="font-file" accept=".ttf,.otf,.woff,.woff2" hidden>
+    <p class="muted">Tip: pick a font here, or upload a .ttf / .otf / .woff file you downloaded.</p>
+  </div>
 
   <div class="layout">
     <aside class="left">
@@ -50,6 +65,7 @@
   </div>
 
   <div class="tray" id="tray" hidden></div>
+  <input type="file" id="photo-file" accept="image/*" multiple hidden>
 
   <script src="mock-data.js"></script>
   <script src="planner.js"></script>

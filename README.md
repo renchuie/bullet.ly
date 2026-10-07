@@ -1,8 +1,9 @@
 # Living GCal
 
 A Firefox extension that opens a bullet-journal style weekly planner for Google Calendar:
-grid-paper spread, a to-do row (Google Tasks) above each day, a habit tracker on the side,
-and draggable stickers.
+grid-paper spread, a bullet-journal to-do list (Google Tasks) above each day, a habit tracker on the side,
+and decorations: emoji, your own photos as stickers, and free text notes. Fonts are changeable
+(including your own uploaded font file).
 
 **Status:** prototype. It runs on fake data (`src/mock-data.js`). Google sign-in is not wired up yet.
 
