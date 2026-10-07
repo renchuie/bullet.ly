@@ -107,8 +107,16 @@
   let focusNewTask = null;
   const pen = { color: INK_COLORS[0], width: 3 };
   const marker = { color: MARKER_COLORS[0], width: 20 };
-  const hiddenCals = new Set(load("hiddenCals", []));
-  const calColor = Object.fromEntries(MOCK.calendars.map((c) => [c.id, c.color]));
+  // Where the calendar/tasks data comes from: fake demo data, or Google once you've connected.
+  const store = {
+    mode: "demo", calendars: MOCK.calendars, events: MOCK.events, allDay: MOCK.allDay,
+    tasks: [], lists: null, calendarsLoaded: false,
+    loading: false, error: "", needsSignIn: false, syncedAt: null,
+  };
+  let hiddenCals = new Set(load("hiddenCals", []));
+  const hiddenKey = () => (store.mode === "google" ? "hiddenCalsG" : "hiddenCals");
+  const colorOf = (id) => (store.calendars.find((c) => c.id === id) || {}).color || "#cfcfc6";
+  let loadSeq = 0;
   const weekKey = () => dateKey(weekStart);
 
   // tasks are stored per calendar date (this is what Google Tasks will provide later)
@@ -208,9 +216,69 @@
     }
   }
 
+  // --- to-do data operations (demo = localStorage, google = Google Tasks) ---
+  const taskExtra = () => load("taskExtra", {}); // "migrate"/"cancel" marks Google Tasks can't store
+  function setExtra(id, state) {
+    const all = taskExtra();
+    if (state) all[id] = state; else delete all[id];
+    save("taskExtra", all);
+  }
+  const localTaskOp = (t, fn) => {
+    const all = loadTasks();
+    const i = all.findIndex((a) => a.id === t.id);
+    if (i >= 0) fn(all, i);
+    save("tasks2", all);
+    renderTodos();
+  };
+
+  function setTaskState(t, next) {
+    if (store.mode !== "google") return localTaskOp(t, (all, i) => { all[i].state = next; });
+    const prev = { state: t.state, gStatus: t.gStatus, extra: taskExtra()[t.id] };
+    t.state = next;
+    setExtra(t.id, next === "migrate" || next === "cancel" ? next : null);
+    const gStatus = next === "done" ? "completed" : "needsAction";
+    renderTodos();
+    if (gStatus === t.gStatus) return;
+    t.gStatus = gStatus;
+    GoogleApi.patchTask(t.listId, t.id, gStatus === "completed" ? { status: "completed" } : { status: "needsAction", completed: null })
+      .catch((e) => { t.state = prev.state; t.gStatus = prev.gStatus; setExtra(t.id, prev.extra); showError(e); renderTodos(); });
+  }
+
+  function renameTask(t, title) {
+    if (store.mode !== "google") return localTaskOp(t, (all, i) => { all[i].title = title; });
+    const prev = t.title;
+    t.title = title;
+    renderTodos();
+    GoogleApi.patchTask(t.listId, t.id, { title }).catch((e) => { t.title = prev; showError(e); renderTodos(); });
+  }
+
+  function removeTask(t) {
+    if (store.mode !== "google") return localTaskOp(t, (all, i) => { all.splice(i, 1); });
+    store.tasks = store.tasks.filter((x) => x !== t);
+    renderTodos();
+    GoogleApi.deleteTask(t.listId, t.id).catch((e) => { store.tasks.push(t); showError(e); renderTodos(); });
+  }
+
+  function addTask(date, title) {
+    if (store.mode !== "google") {
+      const all = loadTasks();
+      all.push({ id: Date.now(), date, title, state: "open" });
+      save("tasks2", all);
+      return renderTodos();
+    }
+    const listId = store.lists && store.lists[0] && store.lists[0].id;
+    if (!listId) { showError(new Error("No Google Tasks list found yet. Try the sync button.")); return; }
+    const t = { id: "tmp" + Date.now(), listId, date, title, state: "open", gStatus: "needsAction" };
+    store.tasks.push(t);
+    renderTodos();
+    GoogleApi.createTask(listId, { title, due: `${date}T00:00:00.000Z` })
+      .then((made) => { t.id = made.id; })
+      .catch((e) => { store.tasks = store.tasks.filter((x) => x !== t); showError(e); renderTodos(); });
+  }
+
   function renderTodos() {
     const row = $("todo-row");
-    const tasks = loadTasks();
+    const tasks = store.mode === "google" ? store.tasks : loadTasks();
     const keys = Array.from({ length: 7 }, (_, i) => dateKey(addDays(weekStart, i)));
     const rows = Math.max(MIN_TODO_ROWS, ...keys.map((k) => tasks.filter((t) => t.date === k).length + 1));
     row.replaceChildren(el("div", null, "to-do"));
@@ -223,14 +291,11 @@
         const line = el("div", "todo-line s-" + t.state);
         const mark = el("button", "mark", (STATES.find((s) => s.id === t.state) || STATES[0]).mark);
         mark.title = "Click to change: open → done → migrated → cancelled";
-        mark.onclick = () => {
-          const next = STATES[(STATES.findIndex((s) => s.id === t.state) + 1) % STATES.length];
-          t.state = next.id; save("tasks2", tasks); renderTodos();
-        };
+        mark.onclick = () => setTaskState(t, STATES[(STATES.findIndex((s) => s.id === t.state) + 1) % STATES.length].id);
         const txt = el("span", "txt", t.title);
         txt.onclick = () => inlineEdit(txt, t.title, (v) => {
-          if (v !== null) { if (v) t.title = v; else tasks.splice(tasks.indexOf(t), 1); save("tasks2", tasks); }
-          renderTodos();
+          if (v === null || v === t.title) return renderTodos();
+          if (v) renameTask(t, v); else removeTask(t);
         });
         line.append(mark, txt);
         cell.append(line);
@@ -242,8 +307,8 @@
       const input = el("input"); input.placeholder = "add to-do…";
       input.onkeydown = (e) => {
         if (e.key !== "Enter" || !input.value.trim()) return;
-        tasks.push({ id: Date.now(), date: key, title: input.value.trim(), state: "open" });
-        save("tasks2", tasks); focusNewTask = key; renderTodos();
+        focusNewTask = key;
+        addTask(key, input.value.trim());
       };
       newLine.append(input);
       cell.append(newLine);
@@ -264,9 +329,10 @@
     row.replaceChildren(el("div", null, "all-day"));
     for (let i = 0; i < 7; i++) {
       const cell = el("div");
-      MOCK.allDay.filter((e) => e.day === i && !hiddenCals.has(e.cal)).forEach((e) => {
+      store.allDay.filter((e) => e.day === i && !hiddenCals.has(e.cal)).forEach((e) => {
         const chip = el("div", "chip", e.title);
-        chip.style.background = calColor[e.cal];
+        chip.style.background = colorOf(e.cal);
+        if (e.link) { chip.dataset.link = e.link; chip.style.cursor = "pointer"; chip.onclick = () => window.open(e.link, "_blank", "noopener"); }
         cell.append(chip);
       });
       row.append(cell);
@@ -311,14 +377,17 @@
     for (let i = 0; i < 7; i++) {
       const d = addDays(weekStart, i);
       const col = el("div", "day-col" + (sameDay(d, now) ? " today" : ""));
-      const evs = MOCK.events.filter((e) => e.day === i && !hiddenCals.has(e.cal)).map((e) => ({ ...e }));
+      const evs = store.events
+        .filter((e) => e.day === i && !hiddenCals.has(e.cal) && e.end > START_HOUR && e.start < END_HOUR)
+        .map((e) => ({ ...e, start: Math.max(e.start, START_HOUR), end: Math.min(e.end, END_HOUR) }));
       layoutLanes(evs).forEach((e) => {
         const box = el("div", "event");
         box.style.top = (e.start - START_HOUR) * HOUR_H + "px";
         box.style.height = Math.max((e.end - e.start) * HOUR_H - 2, 20) + "px";
         box.style.left = (e.lane / e.lanes) * 100 + 1 + "%";
         box.style.width = 100 / e.lanes - 2 + "%";
-        box.style.background = calColor[e.cal];
+        box.style.background = colorOf(e.cal);
+        if (e.link) { box.dataset.link = e.link; box.title = "Open in Google Calendar"; box.onclick = () => { if (!decorating) window.open(e.link, "_blank", "noopener"); }; }
         box.append(el("div", "t", e.title), el("div", "time", fmtTime(e.start) + " – " + fmtTime(e.end)));
         col.append(box);
       });
@@ -355,7 +424,7 @@
         td.className = cls.join(" ");
         td.append(el("span", null, String(d.getDate())));
         td.style.cursor = "pointer";
-        td.onclick = () => { weekStart = startOfWeek(d); render(); };
+        td.onclick = () => changeWeek(startOfWeek(d));
         tr.append(td);
       }
       table.append(tr);
@@ -366,15 +435,16 @@
   function renderCalList() {
     const ul = $("cal-list");
     ul.replaceChildren();
-    MOCK.calendars.forEach((c) => {
+    store.calendars.forEach((c) => {
       const li = el("li", hiddenCals.has(c.id) ? "off" : "");
       const sw = el("span", "swatch");
       sw.style.background = c.color; sw.style.borderColor = c.color;
       li.append(sw, el("span", null, c.name));
       li.onclick = () => {
         hiddenCals.has(c.id) ? hiddenCals.delete(c.id) : hiddenCals.add(c.id);
-        save("hiddenCals", [...hiddenCals]);
+        save(hiddenKey(), [...hiddenCals]);
         render();
+        if (store.mode === "google") loadWeekData(); // hidden calendars aren't downloaded
       };
       ul.append(li);
     });
@@ -975,13 +1045,252 @@
     setupInk();
   }
 
-  // ---------- wiring ----------
-  function render() {
-    renderTitle(); renderHead(); renderTodos(); renderAllDay(); renderTimeline();
-    renderMiniCal(); renderCalList(); renderGoals(); renderHabits(); renderInk(); renderStickers();
+  // ---------- Google connection ----------
+  function showError(e) {
+    console.error(e);
+    store.error = (e && e.message) || String(e);
+    updateStatus();
   }
 
-  const changeWeek = (d) => { setActiveNote(null); weekStart = d; render(); };
+  function updateStatus() {
+    const st = $("sync-status"), btn = $("google-btn"), refresh = $("refresh-btn");
+    const google = store.mode === "google";
+    btn.textContent = google ? "Google" : "Connect Google";
+    btn.classList.toggle("connected", google);
+    refresh.hidden = !google;
+    st.className = "sync";
+    st.style.cssText = "";
+    st.onclick = null; st.title = "";
+    if (!google) {
+      st.textContent = GoogleApi.available ? "Demo data" : "Preview with demo data";
+    } else if (store.needsSignIn) {
+      st.textContent = "Sign in again";
+      st.className = "sync err";
+      st.style.cssText = "background:#ffe9ec;border:1.5px solid #d96c7a;border-radius:999px;padding:4px 12px;color:#2b2b2b";
+      st.title = store.error;
+    } else if (store.loading) {
+      st.textContent = "Syncing…";
+    } else if (store.error) {
+      st.textContent = "⚠ " + (store.error.length > 60 ? store.error.slice(0, 57) + "…" : store.error);
+      st.className = "sync err";
+      st.title = store.error;
+    } else if (store.syncedAt) {
+      st.textContent = "Synced " + store.syncedAt.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    } else {
+      st.textContent = "";
+    }
+    if (store.needsSignIn) { st.style.cursor = "pointer"; st.onclick = () => connectGoogle(); }
+    else st.style.cursor = "";
+  }
+
+  function mapEvent(calId, e, events, allDay) {
+    if (e.status === "cancelled" || e.eventType === "workingLocation") return;
+    if ((e.attendees || []).some((a) => a.self && a.responseStatus === "declined")) return;
+    const title = e.summary || "(no title)";
+    const link = e.htmlLink;
+    if (e.start && e.start.dateTime) {
+      const s = new Date(e.start.dateTime), en = new Date(e.end.dateTime);
+      for (let i = 0; i < 7; i++) {
+        const dayStart = addDays(weekStart, i), dayEnd = addDays(weekStart, i + 1);
+        if (s < dayEnd && en > dayStart) {
+          events.push({
+            day: i, title, cal: calId, link,
+            start: (Math.max(s, dayStart) - dayStart) / 36e5,
+            end: (Math.min(en, dayEnd) - dayStart) / 36e5,
+          });
+        }
+      }
+    } else if (e.start && e.start.date) {
+      const s = new Date(e.start.date + "T00:00:00"), en = new Date(e.end.date + "T00:00:00"); // end is exclusive
+      for (let i = 0; i < 7; i++) {
+        const d = addDays(weekStart, i);
+        if (d >= s && d < en) allDay.push({ day: i, title, cal: calId, link });
+      }
+    }
+  }
+
+  async function loadWeekData() {
+    if (store.mode !== "google") { updateStatus(); return; }
+    const seq = ++loadSeq;
+    store.loading = true; store.error = ""; store.needsSignIn = false;
+    updateStatus();
+    try {
+      if (!store.calendarsLoaded) {
+        store.calendars = await GoogleApi.listCalendars();
+        store.calendarsLoaded = true;
+        const primary = store.calendars.find((c) => c.primary);
+        if (primary) GoogleApi.setEmail(primary.id);
+        const saved = load("hiddenCalsG", null);
+        hiddenCals = new Set(saved || store.calendars.filter((c) => !c.selected).map((c) => c.id)); // match what Google shows
+        save("hiddenCalsG", [...hiddenCals]);
+      }
+      if (!store.lists) store.lists = await GoogleApi.listTaskLists();
+
+      const timeMin = weekStart.toISOString(), timeMax = addDays(weekStart, 7).toISOString();
+      const dueMin = `${dateKey(weekStart)}T00:00:00.000Z`, dueMax = `${dateKey(addDays(weekStart, 7))}T00:00:00.000Z`;
+      let failed = 0;
+      const [calResults, taskResults] = await Promise.all([
+        Promise.all(store.calendars.filter((c) => !hiddenCals.has(c.id)).map((c) =>
+          GoogleApi.listEvents(c.id, timeMin, timeMax).then((items) => ({ c, items })).catch((e) => {
+            if (e instanceof GoogleApi.AuthError) throw e;
+            failed++; return { c, items: [] };
+          }))),
+        Promise.all(store.lists.map((l) =>
+          GoogleApi.listTasks(l.id, dueMin, dueMax).then((items) => items.map((t) => ({ ...t, listId: l.id }))))),
+      ]);
+      if (seq !== loadSeq) return; // you've moved to a different week since
+
+      const events = [], allDay = [];
+      calResults.forEach(({ c, items }) => items.forEach((e) => mapEvent(c.id, e, events, allDay)));
+      const extra = taskExtra();
+      store.events = events; store.allDay = allDay;
+      store.tasks = taskResults.flat().filter((t) => !t.deleted && t.due).map((t) => ({
+        id: t.id, listId: t.listId, date: t.due.slice(0, 10), title: t.title || "(untitled)",
+        gStatus: t.status, state: t.status === "completed" ? "done" : extra[t.id] || "open",
+      }));
+      store.syncedAt = new Date();
+      if (failed) store.error = `${failed} calendar${failed > 1 ? "s" : ""} couldn't be loaded`;
+    } catch (e) {
+      if (seq !== loadSeq) return;
+      store.error = e.message;
+      store.needsSignIn = e instanceof GoogleApi.AuthError;
+    } finally {
+      if (seq === loadSeq) { store.loading = false; updateStatus(); renderData(); }
+    }
+  }
+
+  function clearWeekData() { store.events = []; store.allDay = []; store.tasks = []; }
+
+  function enterGoogleMode() {
+    store.mode = "google";
+    store.calendars = []; store.calendarsLoaded = false; store.lists = null;
+    clearWeekData();
+    hiddenCals = new Set(load("hiddenCalsG", []));
+    render();
+    loadWeekData();
+  }
+
+  function leaveGoogleMode() {
+    store.mode = "demo";
+    store.calendars = MOCK.calendars; store.events = MOCK.events; store.allDay = MOCK.allDay; store.tasks = [];
+    store.error = ""; store.needsSignIn = false; store.syncedAt = null;
+    hiddenCals = new Set(load("hiddenCals", []));
+    render();
+  }
+
+  async function connectGoogle() {
+    try {
+      await GoogleApi.signIn();
+    } catch (e) {
+      showError(e);
+      renderGooglePanel(e.message);
+      $("google-panel").hidden = false;
+      return;
+    }
+    $("google-panel").hidden = true;
+    enterGoogleMode();
+  }
+
+  let editingClient = false;
+  function renderGooglePanel(message) {
+    const panel = $("google-panel");
+    panel.replaceChildren(el("h2", null, "Google Calendar & Tasks"));
+    const msg = () => message && panel.append(el("div", "msg", message));
+
+    if (!GoogleApi.available) {
+      panel.append(el("p", null, "Google sign-in only works inside the Firefox extension. You're previewing the page directly, so you're seeing demo data. Load it as an add-on (see the README) to connect."));
+      return;
+    }
+
+    const connected = store.mode === "google";
+    if (connected && !editingClient) {
+      panel.append(el("p", null, "Connected. Events are read from your Google Calendars and to-dos come from Google Tasks, so checking things off here updates Google Tasks too."));
+      panel.append(el("p", "muted", "Only to-dos that have a due date show up on the spread. Calendars are shown the same way Google Calendar shows them (use the calendar list on the left to turn them on or off)."));
+      msg();
+      const row = el("div", "row");
+      const out = el("button", "pill", "Disconnect");
+      out.onclick = async () => { await GoogleApi.signOut(); leaveGoogleMode(); renderGooglePanel(); updateStatus(); };
+      const change = el("button", "pill", "Change Client ID");
+      change.onclick = () => { editingClient = true; renderGooglePanel(); };
+      row.append(out, change);
+      panel.append(row);
+      return;
+    }
+
+    if (GoogleApi.isConfigured() && !editingClient) {
+      panel.append(el("p", null, "Your Client ID is saved. Click below to sign in with Google."));
+      msg();
+      const row = el("div", "row");
+      const go = el("button", "pill on", "Sign in with Google"); go.onclick = connectGoogle;
+      const change = el("button", "pill", "Change Client ID"); change.onclick = () => { editingClient = true; renderGooglePanel(); };
+      row.append(go, change);
+      panel.append(row);
+      return;
+    }
+
+    // first-time setup
+    const redirect = GoogleApi.redirectUrl();
+    const steps = el("ol");
+    const li = (html) => { const x = el("li"); x.innerHTML = html; steps.append(x); return x; };
+    li('Open <b>console.cloud.google.com</b> and create a project (any name).');
+    li('Go to <b>APIs &amp; Services → Library</b> and enable <b>Google Calendar API</b> and <b>Google Tasks API</b>.');
+    li('Set up the <b>OAuth consent screen</b> (type <b>External</b>) and add your own Google account as a <b>test user</b>.');
+    li('Go to <b>Credentials → Create credentials → OAuth client ID</b>, choose <b>Web application</b>, and add this under <b>Authorized redirect URIs</b>:');
+    const box = el("code", "copybox", redirect);
+    steps.lastChild.append(box);
+    const copy = el("button", "pill", "Copy redirect URL");
+    copy.onclick = async () => { try { await navigator.clipboard.writeText(redirect); copy.textContent = "Copied ✓"; } catch { copy.textContent = "Select and copy it manually"; } };
+    steps.lastChild.append(copy);
+    li('Copy the <b>Client ID</b> Google gives you and paste it here:');
+    panel.append(steps);
+
+    const input = el("input"); input.type = "text"; input.placeholder = "123456789-abc….apps.googleusercontent.com";
+    input.value = GoogleApi.clientId();
+    panel.append(input);
+    msg();
+    const row = el("div", "row");
+    const go = el("button", "pill on", "Save & sign in");
+    go.onclick = () => {
+      const v = input.value.trim();
+      if (!/\.apps\.googleusercontent\.com$/.test(v)) { renderGooglePanel("That doesn't look like a Client ID. It should end in .apps.googleusercontent.com"); return; }
+      GoogleApi.setClientId(v); editingClient = false; connectGoogle();
+    };
+    row.append(go);
+    if (editingClient) { const cancel = el("button", "pill", "Cancel"); cancel.onclick = () => { editingClient = false; renderGooglePanel(); }; row.append(cancel); }
+    panel.append(row);
+    panel.append(el("p", "muted", "Tip: in Google's \"testing\" mode you'll be asked to sign in again about once a week. Publishing the app (still just for you) removes that."));
+  }
+
+  function setupGoogle() {
+    $("google-btn").onclick = () => {
+      const panel = $("google-panel");
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) { editingClient = false; renderGooglePanel(); }
+    };
+    $("refresh-btn").onclick = () => loadWeekData();
+    // keep data fresh
+    setInterval(() => { if (!document.hidden && store.mode === "google" && !store.loading) loadWeekData(); }, 5 * 60 * 1000);
+    window.addEventListener("focus", () => {
+      if (store.mode === "google" && !store.loading && store.syncedAt && Date.now() - store.syncedAt > 2 * 60 * 1000) loadWeekData();
+    });
+    updateStatus();
+    if (GoogleApi.available && GoogleApi.isConfigured() && GoogleApi.wasConnected()) enterGoogleMode();
+  }
+
+  // ---------- wiring ----------
+  function renderData() { renderTodos(); renderAllDay(); renderTimeline(); renderCalList(); }
+  function render() {
+    renderTitle(); renderHead(); renderData();
+    renderMiniCal(); renderGoals(); renderHabits(); renderInk(); renderStickers();
+    updateStatus();
+  }
+
+  const changeWeek = (d) => {
+    setActiveNote(null); weekStart = d;
+    if (store.mode === "google") clearWeekData();
+    render();
+    loadWeekData();
+  };
   $("today-btn").onclick = () => changeWeek(startOfWeek(new Date()));
   $("prev-btn").onclick = () => changeWeek(addDays(weekStart, -7));
   $("next-btn").onclick = () => changeWeek(addDays(weekStart, 7));
@@ -990,4 +1299,5 @@
   setupFonts();
   setupDecorating();
   render();
+  setupGoogle();
 })();

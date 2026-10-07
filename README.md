@@ -5,7 +5,8 @@ grid-paper spread, a bullet-journal to-do list (Google Tasks) above each day, a 
 and decorations: emoji (full library), your own photos as stickers, rich text notes, and freehand pen/highlighter drawing. Fonts are changeable
 (including your own uploaded font file).
 
-**Status:** prototype. It runs on fake data (`src/mock-data.js`). Google sign-in is not wired up yet.
+**Status:** prototype. It shows demo data until you connect Google (see [docs/google-setup.md](docs/google-setup.md)).
+Once connected, events come from Google Calendar (read-only) and to-dos from Google Tasks (read/write).
 
 ## Try it in Firefox
 1. Open `about:debugging#/runtime/this-firefox`
@@ -16,6 +17,6 @@ and decorations: emoji (full library), your own photos as stickers, rich text no
 
 ## Roadmap
 1. Layout with fake data (done)
-2. Google sign-in, read Calendar + Tasks
-3. Write back: check off tasks, create/edit events
+2. Google sign-in, read Calendar + Tasks, write Tasks (done)
+3. Create/edit events from the planner
 4. Save habits and stickers to the cloud, themes

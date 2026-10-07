@@ -16,6 +16,9 @@
     <button id="prev-btn" class="icon-btn" aria-label="Previous week">‹</button>
     <button id="next-btn" class="icon-btn" aria-label="Next week">›</button>
     <h1 id="title"></h1>
+    <span id="sync-status" class="sync"></span>
+    <button id="refresh-btn" class="icon-btn" title="Sync now" hidden>↻</button>
+    <button id="google-btn" class="pill">Connect Google</button>
     <button id="font-btn" class="pill">Aa Fonts</button>
     <button id="sticker-toggle" class="pill">✿ Decorate</button>
   </header>
@@ -32,6 +35,8 @@
     <input type="file" id="font-file" accept=".ttf,.otf,.woff,.woff2" hidden>
     <p class="muted">Tip: pick a font here, or upload a .ttf / .otf / .woff file you downloaded.</p>
   </div>
+
+  <div class="google-panel card" id="google-panel" hidden></div>
 
   <div class="layout">
     <aside class="left">
@@ -76,6 +81,7 @@
   <input type="file" id="photo-file" accept="image/*" multiple hidden>
 
   <script src="mock-data.js"></script>
+  <script src="google.js"></script>
   <script src="planner.js"></script>
 </body>
 </html>

@@ -1,16 +1,28 @@
 {
   "manifest_version": 3,
   "name": "Living GCal",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A bullet-journal style weekly planner for Google Calendar.",
   "browser_specific_settings": {
-    "gecko": { "id": "living-gcal@example.local" }
+    "gecko": {
+      "id": "living-gcal@example.local"
+    }
   },
   "action": {
     "default_title": "Open Living GCal"
   },
   "background": {
-    "scripts": ["src/background.js"]
+    "scripts": [
+      "src/background.js"
+    ]
   },
-  "permissions": ["storage"]
+  "permissions": [
+    "storage",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://www.googleapis.com/*",
+    "https://tasks.googleapis.com/*",
+    "https://oauth2.googleapis.com/*"
+  ]
 }
