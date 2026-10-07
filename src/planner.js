@@ -14,8 +14,7 @@
     "Sue Ellen Francisco", "Over the Rainbow", "Delicious Handrawn", "Mynerve",
     "Nothing You Could Do", "Homemade Apple", "Gloria Hallelujah",
   ];
-  const BODY_FONTS = ["Patrick Hand", "Quicksand", "Nunito", "Kalam", "Gaegu", "Handlee", "Architects Daughter", "Inter"];
-
+  
   const INK_COLORS = ["#2b2b2b", "#d94b5a", "#e8833a", "#3b82c4", "#3a9d6b", "#8a5cc6", "#8b5e3c", "#ffffff"];
   const MARKER_COLORS = ["#ffe14d", "#ff8fb1", "#7be0a1", "#7cc4ff", "#ffb066", "#c3a1ff"];
   const HILITE_COLORS = ["#fff3a3", "#ffd1dc", "#c9f0d2", "#cfe6ff", "#ffe0b8", "#e6d6ff"];
@@ -55,11 +54,52 @@
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const round1 = (v) => Math.round(v * 10) / 10;
 
+  // ---------- color helpers ----------
+  const hexToRgb = (hex) => {
+    const h = hex.replace("#", "");
+    const n = parseInt(h.length === 3 ? h.split("").map((c) => c + c).join("") : h, 16);
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  const rgbToHex = (r, g, b) => "#" + [r, g, b].map((v) => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, "0")).join("");
+  const hexToRgba = (hex, a) => { const [r, g, b] = hexToRgb(hex); return `rgba(${r}, ${g}, ${b}, ${a})`; };
+  function hexToHsl(hex) {
+    const [r, g, b] = hexToRgb(hex).map((v) => v / 255);
+    const max = Math.max(r, g, b), min = Math.min(r, g, b);
+    let h = 0, s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+      const d = max - min;
+      s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      h = max === r ? (g - b) / d + (g < b ? 6 : 0) : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+      h *= 60;
+    }
+    return [h, s * 100, l * 100];
+  }
+  function hslToHex(h, s, l) {
+    s /= 100; l /= 100;
+    const k = (n) => (n + h / 30) % 12;
+    const a = s * Math.min(l, 1 - l);
+    const f = (n) => l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1)));
+    return rgbToHex(f(0) * 255, f(8) * 255, f(4) * 255);
+  }
+  // dark text on light colors, white text on dark ones
+  const textOn = (hex) => { const [r, g, b] = hexToRgb(hex); return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.62 ? "#2b2b2b" : "#ffffff"; };
+  const normHex = (c) => (/^#[0-9a-f]{6}$/i.test(c) ? c : /^#[0-9a-f]{3}$/i.test(c) ? "#" + c.slice(1).split("").map((x) => x + x).join("") : null);
+
   const startOfWeek = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); x.setDate(x.getDate() - x.getDay()); return x; };
   const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
   const sameDay = (a, b) => a.toDateString() === b.toDateString();
   const dateKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   const fmtHour = (h) => (h % 12 === 0 ? 12 : h % 12) + (h < 12 ? " AM" : " PM");
+  // "9 – 11am", "9:05 – 11:05am", "11am – 1pm"
+  function fmtRange(s, e) {
+    const part = (t, withMer) => {
+      const h = Math.floor(t) % 24, m = Math.round((t - Math.floor(t)) * 60);
+      return `${h % 12 === 0 ? 12 : h % 12}${m ? ":" + String(m).padStart(2, "0") : ""}${withMer ? (h < 12 ? "am" : "pm") : ""}`;
+    };
+    const sPm = Math.floor(s) % 24 >= 12, ePm = Math.floor(e) % 24 >= 12;
+    return `${part(s, sPm !== ePm)} – ${part(e, true)}`;
+  }
   const fmtTime = (t) => {
     const h = Math.floor(t), m = Math.round((t - h) * 60);
     return (h % 12 === 0 ? 12 : h % 12) + (m ? ":" + String(m).padStart(2, "0") : "") + (h < 12 ? "am" : "pm");
@@ -102,11 +142,9 @@
 
   // ---------- state ----------
   let weekStart = startOfWeek(new Date());
-  let view = "week"; // "week" | "month"
-  let monthAnchor = new Date(weekStart.getFullYear(), weekStart.getMonth() + (weekStart.getDate() > 24 ? 1 : 0), 1);
   let activePage = "main"; // "main" (the week/month grid itself) or the id of an added free-style page
   let decorating = false;
-  let tool = "move"; // move | pen | marker | eraser | dayfill
+  let tool = "move"; // move | pen | marker | eraser | line
   let focusNewTask = null;
   const pen = { color: INK_COLORS[0], width: 3 };
   const marker = { color: MARKER_COLORS[0], width: 20 };
@@ -118,22 +156,15 @@
   };
   let hiddenCals = new Set(load("hiddenCals", []));
   const hiddenKey = () => (store.mode === "google" ? "hiddenCalsG" : "hiddenCals");
-  const colorOf = (id) => (store.calendars.find((c) => c.id === id) || {}).color || "#cfcfc6";
+  // "Event color mask": show your calendars in a color scheme of your own instead of Google's colors
+  let calMask = load("calMask", { on: false, map: {}, base: "#d96c7a", mood: "pastel" });
+  const googleColorOf = (id) => (store.calendars.find((c) => c.id === id) || {}).color || "#cfcfc6";
+  const colorOf = (id) => (calMask.on && calMask.map[id]) || googleColorOf(id);
   let loadSeq = 0;
   const weekKey = () => dateKey(weekStart);
-  const monthKey = () => `${monthAnchor.getFullYear()}-${String(monthAnchor.getMonth() + 1).padStart(2, "0")}`;
-  const periodKey = () => (view === "month" ? "m:" + monthKey() : "w:" + weekKey());
-
-  // the month grid always starts on a Sunday and has as many rows as the month needs
-  function monthGrid() {
-    const daysIn = new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + 1, 0).getDate();
-    return { gridStart: startOfWeek(monthAnchor), weeks: Math.ceil((monthAnchor.getDay() + daysIn) / 7) };
-  }
+  const periodKey = () => "w:" + weekKey();
   // the dates whose events/tasks we need to have loaded right now
-  function currentRange() {
-    if (view === "month") { const g = monthGrid(); return { start: g.gridStart, days: g.weeks * 7 }; }
-    return { start: weekStart, days: 7 };
-  }
+  const currentRange = () => ({ start: weekStart, days: 7 });
   // events by calendar date. Demo events repeat every week (they only know the weekday).
   const eventsOn = (d) => (store.mode === "google" ? store.events.filter((e) => e.date === dateKey(d)) : store.events.filter((e) => e.day === d.getDay()));
   const allDayOn = (d) => (store.mode === "google" ? store.allDay.filter((e) => e.date === dateKey(d)) : store.allDay.filter((e) => e.day === d.getDay()));
@@ -154,10 +185,30 @@
   const fontStack = (name, kind) => `"${name}", ${kind === "hand" ? "cursive" : "system-ui, sans-serif"}`;
 
   function applyFonts() {
-    const f = load("fonts", { hand: "Caveat", body: "Patrick Hand" });
+    const f = load("fonts", { hand: "Caveat" });
     document.documentElement.style.setProperty("--hand", fontStack(f.hand, "hand"));
-    document.documentElement.style.setProperty("--body", fontStack(f.body, "body"));
     return f;
+  }
+
+  // ---------- accent color ----------
+  const ACCENTS = ["#d96c7a", "#e8744f", "#e0a526", "#6aa84f", "#3a9d9a", "#4a86d1", "#8a63c8", "#4a4a4a"];
+  const DEFAULT_ACCENT = "#d96c7a";
+  function applyAccent() {
+    const hex = normHex(load("accent", DEFAULT_ACCENT)) || DEFAULT_ACCENT;
+    document.documentElement.style.setProperty("--accent", hex);
+    document.documentElement.style.setProperty("--on-accent", textOn(hex));
+  }
+  function renderAccentPicker() {
+    const row = $("accent-row");
+    const cur = load("accent", DEFAULT_ACCENT);
+    row.replaceChildren();
+    ACCENTS.forEach((c) => {
+      const b = el("button", "sw" + (c === cur ? " on" : ""));
+      b.style.background = c; b.title = c;
+      b.onclick = () => { save("accent", c); applyAccent(); renderAccentPicker(); };
+      row.append(b);
+    });
+    row.append(pickerSwatch((v) => { save("accent", v); applyAccent(); renderAccentPicker(); }, cur, !ACCENTS.includes(cur)));
   }
 
   function fillFontSelect(sel, names, current, kind) {
@@ -176,8 +227,8 @@
   function renderFontPanel() {
     const f = applyFonts();
     fillFontSelect($("hand-font"), HAND_FONTS, f.hand, "hand");
-    fillFontSelect($("body-font"), BODY_FONTS, f.body, "body");
     fillNoteFontSelect();
+    renderAccentPicker();
   }
 
   async function registerUserFont(rec) {
@@ -195,8 +246,7 @@
     } catch {}
     renderFontPanel();
 
-    $("hand-font").onchange = (e) => { const f = load("fonts", {}); f.hand = e.target.value; save("fonts", { body: "Patrick Hand", ...f }); renderFontPanel(); };
-    $("body-font").onchange = (e) => { const f = load("fonts", {}); f.body = e.target.value; save("fonts", { hand: "Caveat", ...f }); renderFontPanel(); };
+    $("hand-font").onchange = (e) => { save("fonts", { hand: e.target.value }); renderFontPanel(); };
     $("font-btn").onclick = () => { $("font-panel").hidden = !$("font-panel").hidden; };
     $("font-upload-btn").onclick = () => $("font-file").click();
     $("font-file").onchange = async (e) => {
@@ -207,9 +257,7 @@
         const rec = { id: Date.now(), name: file.name.replace(/\.[^.]+$/, ""), buffer: await file.arrayBuffer() };
         await registerUserFont(rec);
         await dbDo("fonts", "readwrite", (s) => s.put(rec));
-        const f = load("fonts", { hand: "Caveat", body: "Patrick Hand" });
-        f.hand = userFonts[userFonts.length - 1].family;
-        save("fonts", f);
+        save("fonts", { hand: userFonts[userFonts.length - 1].family });
         renderFontPanel();
       } catch { alert("Sorry, that doesn't look like a font file I can use. Try a .ttf, .otf or .woff file."); }
     };
@@ -217,7 +265,6 @@
 
   // ---------- rendering: header, to-dos, all-day, timeline ----------
   function renderTitle() {
-    if (view === "month") { $("title").textContent = monthAnchor.toLocaleDateString("en-US", { month: "long", year: "numeric" }); return; }
     const end = addDays(weekStart, 6);
     const opts = { month: "long", year: "numeric" };
     $("title").textContent = weekStart.getMonth() === end.getMonth()
@@ -352,6 +399,7 @@
       allDayOn(addDays(weekStart, i)).filter((e) => !hiddenCals.has(e.cal)).forEach((e) => {
         const chip = el("div", "chip", e.title);
         chip.style.background = colorOf(e.cal);
+        chip.style.color = textOn(colorOf(e.cal));
         if (e.link) { chip.dataset.link = e.link; chip.style.cursor = "pointer"; chip.onclick = () => window.open(e.link, "_blank", "noopener"); }
         cell.append(chip);
       });
@@ -406,9 +454,12 @@
         box.style.height = Math.max((e.end - e.start) * HOUR_H - 2, 20) + "px";
         box.style.left = (e.lane / e.lanes) * 100 + 1 + "%";
         box.style.width = 100 / e.lanes - 2 + "%";
-        box.style.background = colorOf(e.cal);
+        const bg = colorOf(e.cal);
+        box.style.background = bg; box.style.color = textOn(bg);
         if (e.link) { box.dataset.link = e.link; box.title = "Open in Google Calendar"; box.onclick = () => { if (!decorating) window.open(e.link, "_blank", "noopener"); }; }
-        box.append(el("div", "t", e.title), el("div", "time", fmtTime(e.start) + " – " + fmtTime(e.end)));
+        // like Google Calendar: short events get one line ("Title, 9:05am"), longer ones title + time range
+        if (e.end - e.start < 0.75) { box.classList.add("short"); box.append(el("div", "t", `${e.title}, ${fmtTime(e.start)}`)); }
+        else box.append(el("div", "t", e.title), el("div", "time", fmtRange(e.start, e.end)));
         col.append(box);
       });
       if (sameDay(d, now)) {
@@ -452,23 +503,32 @@
     box.replaceChildren(title, table);
   }
 
+  // same order as Google Calendar: your main calendar first, then A–Z by name (emoji sort after letters)
+  const calKey = (c) => (c.name || "").toLowerCase();
+  const sortedCalendars = (list) => [...list].sort((a, b) =>
+    (b.primary ? 1 : 0) - (a.primary ? 1 : 0) || (calKey(a) < calKey(b) ? -1 : calKey(a) > calKey(b) ? 1 : 0));
+  const isMine = (c) => !c.role || c.role === "owner" || c.role === "writer" || /^addressbook#contacts@/.test(c.id);
+
   function renderCalList() {
-    const ul = $("cal-list");
-    ul.replaceChildren();
-    store.calendars.forEach((c) => {
+    const mine = $("cal-list"), other = $("cal-list-other");
+    mine.replaceChildren(); other.replaceChildren();
+    sortedCalendars(store.calendars).forEach((c) => {
       const li = el("li", hiddenCals.has(c.id) ? "off" : "");
-      const sw = el("span", "swatch");
-      sw.style.background = c.color; sw.style.borderColor = c.color;
-      li.append(sw, el("span", null, c.name));
+      li.title = c.name;
+      const box = el("span", "cbox");
+      box.style.setProperty("--c", colorOf(c.id));
+      li.append(box, el("span", "cname", c.name));
       li.onclick = () => {
         hiddenCals.has(c.id) ? hiddenCals.delete(c.id) : hiddenCals.add(c.id);
         save(hiddenKey(), [...hiddenCals]);
         render();
         if (store.mode === "google") loadData(); // hidden calendars aren't downloaded
       };
-      ul.append(li);
+      (isMine(c) ? mine : other).append(li);
     });
+    $("other-cals").hidden = !other.children.length;
   }
+
 
   // ---------- weekly goals & habits (both editable) ----------
   function renderGoals() {
@@ -606,9 +666,9 @@
   }
 
   // ---------- surfaces: the pages you can decorate ----------
-  // The week spread, the month spread and every free-style page share the same decoration tools.
+  // The week spread and every free-style page share the same decoration tools.
   // Positions are stored as percentages of the page so they survive window resizes.
-  const PAGE_W = 1200, PAGE_H = 840, GRID = 24; // free-style pages are a fixed 1200 x 840 sheet, scaled to fit
+  const GRID = 24, MAX_BLOCK = 2400; // GRID = one grid square in px
   const uid = () => "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   let selectedId = null;
   let snapOn = load("snap", true);
@@ -619,8 +679,6 @@
       host = $("pcanvas");
       const base = `p:${periodKey()}:${activePage}`;
       dkey = "stickers:" + base; ikey = "ink:" + base;
-    } else if (view === "month") {
-      host = $("mspread"); dkey = "stickers:m:" + monthKey(); ikey = "ink:m:" + monthKey();
     } else {
       host = $("spread"); dkey = "stickers:" + weekKey(); ikey = "ink:" + weekKey();
     }
@@ -661,19 +719,22 @@
   // ----- design blocks (boxes, tape, banners, checklists, trackers, ...) -----
   const BLOCKS = {
     box: { label: "Box", icon: "▭", hint: "frame or panel", resize: "both", snapSize: true, defaults: () => ({ w: 240, h: 120, fill: "transparent", border: "#2b2b2b", dashed: false, radius: 10 }) },
+    line: { label: "Line", icon: "／", hint: "straight line", resize: "width", minW: 12, defaults: () => ({ w: 220, t: lastLine().t, color: lastLine().color, dashed: false, arrow: "none" }) },
     tape: { label: "Washi tape", icon: "🎀", hint: "stripes, dots…", resize: "both", defaults: () => ({ w: 170, h: 28, rot: -3, color: "#f6a6b8", pattern: "stripes" }) },
     banner: { label: "Banner", icon: "🏷️", hint: "section label", resize: "both", snapSize: true, defaults: () => ({ w: 360, h: 24, text: "PRIORITIES", fill: "#f6c6d0" }) },
-    checklist: { label: "Checklist", icon: "☑️", hint: "bullet to-do list", resize: "width", snapSize: true, defaults: () => ({ w: 300, items: [] }) },
-    habits: { label: "Tracker", icon: "▦", hint: "habit grid", resize: "width", snapSize: true, defaults: () => ({ w: 420, fill: "#86d9c6", rows: [{ n: "Habit 1", d: [] }, { n: "Habit 2", d: [] }, { n: "Habit 3", d: [] }] }) },
-    agenda: { label: "Week agenda", icon: "📅", hint: "this week's events", resize: "width", snapSize: true, weekOnly: true, defaults: () => ({ w: 300 }) },
+    checklist: { label: "Checklist", icon: "☑️", hint: "bullet to-do list", resize: "width", snapSize: true, hidden: true, defaults: () => ({ w: 300, items: [] }) },
+    habits: { label: "Tracker", icon: "▦", hint: "habit grid", resize: "width", snapSize: true, hidden: true, defaults: () => ({ w: 420, fill: "#86d9c6", rows: [{ n: "Habit 1", d: [] }, { n: "Habit 2", d: [] }, { n: "Habit 3", d: [] }] }) },
+    agenda: { label: "Week agenda", icon: "📅", hint: "this week's events", resize: "width", snapSize: true, hidden: true, defaults: () => ({ w: 300 }) },
     minical: { label: "Mini calendar", icon: "🗓️", hint: "month at a glance", resize: "width", snapSize: true, defaults: () => ({ w: 216 }) },
   };
   const GRIP_KINDS = new Set(["text", "checklist", "habits", "banner"]); // blocks with editable content drag by a handle
-  const SNAP_KINDS = new Set(["text", ...Object.keys(BLOCKS)]);
+  const SNAP_KINDS = new Set(["text", ...Object.keys(BLOCKS).filter((k) => k !== "line")]);
   const BOX_FILLS = ["transparent", "#ffffff", "#fff3c4", "#ffe3e8", "#d9f2e1", "#d6ebff", "#ead9ff", "#ffe1c7"];
   const LINE_COLORS = ["transparent", "#2b2b2b", "#d94b5a", "#e8833a", "#3b82c4", "#3a9d6b", "#8a5cc6", "#8b5e3c"];
   const TAPE_COLORS = ["#f6a6b8", "#f9d27a", "#9fdcc0", "#9cc9f2", "#c9b3ef", "#f7b98b", "#d9d9d2"];
   const BANNER_COLORS = ["#f6c6d0", "#fbe3a1", "#c8ecd6", "#cfe6ff", "#e6d6ff", "#ffd9bf", "#e8e8e0"];
+  const LINE_PALETTE = ["#2b2b2b", "#d94b5a", "#e8833a", "#e0a526", "#3a9d6b", "#3b82c4", "#8a5cc6", "#ffffff"];
+  const lastLine = () => load("lastLine", { color: "#2b2b2b", t: 3 });
   const HABIT_FILLS = ["#86d9c6", "#f6a6b8", "#f9d27a", "#9cc9f2", "#c9b3ef"];
   const TAPE_PATTERNS = [["solid", "▬"], ["stripes", "▨"], ["dots", "⁙"], ["checks", "▦"]];
   const nextState = (id) => STATES[(STATES.findIndex((x) => x.id === id) + 1) % STATES.length].id;
@@ -731,7 +792,7 @@
       for (let c = 0; c < 7; c++) {
         const d = addDays(gridStart, r * 7 + c);
         const td = el("td", d.getMonth() === first.getMonth() ? "cur" : "");
-        if (view === "week" && sameDay(startOfWeek(d), weekStart)) td.classList.add("inw");
+        if (sameDay(startOfWeek(d), weekStart)) td.classList.add("inw");
         if (sameDay(d, new Date())) td.classList.add("tod");
         td.append(el("span", null, String(d.getDate())));
         tr.append(td);
@@ -756,6 +817,26 @@
       body.style.background = s.fill || "transparent";
       body.style.border = s.border && s.border !== "transparent" ? `${s.bw || 2}px ${s.dashed ? "dashed" : "solid"} ${s.border}` : "none";
       body.style.borderRadius = (s.radius ?? 10) + "px";
+    } else if (s.kind === "line") {
+      const t = s.t || 3, ah = Math.max(9, t * 3.2), hh = ah * 0.55;
+      body.style.height = "18px";
+      const ln = el("div", "ln");
+      ln.style.height = t + "px"; ln.style.marginTop = -t / 2 + "px";
+      ln.style.left = (s.arrow === "both" ? ah * 0.7 : 0) + "px";
+      ln.style.right = (s.arrow && s.arrow !== "none" ? ah * 0.7 : 0) + "px";
+      ln.style.borderRadius = t / 2 + "px";
+      ln.style.background = s.dashed ? `repeating-linear-gradient(90deg, ${s.color} 0 ${t * 3}px, transparent ${t * 3}px ${t * 5}px)` : s.color;
+      body.replaceChildren(ln);
+      if (s.arrow && s.arrow !== "none") {
+        const head = el("i", "arrowhead");
+        head.style.cssText = `right:0;top:50%;margin-top:${-hh}px;border-top:${hh}px solid transparent;border-bottom:${hh}px solid transparent;border-left:${ah}px solid ${s.color}`;
+        body.append(head);
+      }
+      if (s.arrow === "both") {
+        const head = el("i", "arrowhead");
+        head.style.cssText = `left:0;top:50%;margin-top:${-hh}px;border-top:${hh}px solid transparent;border-bottom:${hh}px solid transparent;border-right:${ah}px solid ${s.color}`;
+        body.append(head);
+      }
     } else if (s.kind === "tape") {
       const light = "rgba(255,255,255,.6)", p = s.pattern || "solid";
       body.style.backgroundColor = s.color;
@@ -830,7 +911,7 @@
       body._refresh = fill;
       fill();
     } else if (s.kind === "minical") {
-      body.replaceChildren(miniMonth(view === "month" ? monthAnchor : addDays(weekStart, 3)));
+      body.replaceChildren(miniMonth(addDays(weekStart, 3)));
     }
   }
   const refreshAgendas = () => document.querySelectorAll(".blk-agenda").forEach((n) => n._refresh && n._refresh());
@@ -906,8 +987,8 @@
           let w = c.w0 + dx * Math.cos(th) + dy * Math.sin(th);
           let h = c.h0 - dx * Math.sin(th) + dy * Math.cos(th);
           if (snapOn && def.snapSize) { w = Math.round(w / GRID) * GRID; h = Math.round(h / GRID) * GRID; }
-          s.w = clamp(w, def.resize === "both" ? 8 : GRID * 3, PAGE_W);
-          if (def.resize === "both") s.h = clamp(h, 8, PAGE_H);
+          s.w = clamp(w, def.minW || (def.resize === "both" ? 8 : GRID * 3), MAX_BLOCK);
+          if (def.resize === "both") s.h = clamp(h, 8, MAX_BLOCK);
           applySize();
         }, () => { persist(); fillBlock(s, body, persist); });
     } else {
@@ -1030,7 +1111,7 @@
 
     document.querySelectorAll(".ink-layer").forEach((svg) => {
       svg.onpointerdown = (ev) => {
-        if (!DRAW_TOOLS.includes(tool)) return;
+        if (!DRAW_TOOLS.includes(tool) && tool !== "line") return;
         ev.preventDefault();
         svg.setPointerCapture(ev.pointerId);
         const sf = surface();
@@ -1038,6 +1119,39 @@
         const norm = (e) => [round1(((e.clientX - rect.left) / rect.width) * 1000), round1(((e.clientY - rect.top) / rect.height) * 1000)];
         const end = () => { svg.onpointermove = null; svg.onpointerup = null; };
 
+        if (tool === "line") {
+          // drag from one end to the other; Shift keeps it to 15° angles; Snap pulls the ends to the grid squares
+          const pt = (e) => [e.clientX - rect.left, e.clientY - rect.top];
+          const snapPt = (q) => (snapOn ? [Math.round(q[0] / GRID) * GRID, Math.round(q[1] / GRID) * GRID] : q);
+          const a = snapPt(pt(ev));
+          let b = a;
+          const st = lastLine();
+          const prev = document.createElementNS(SVG_NS, "line");
+          prev.setAttribute("stroke", st.color); prev.setAttribute("stroke-width", st.t); prev.setAttribute("stroke-linecap", "round");
+          prev.style.vectorEffect = "non-scaling-stroke";
+          const upd = () => {
+            prev.setAttribute("x1", (a[0] / rect.width) * 1000); prev.setAttribute("y1", (a[1] / rect.height) * 1000);
+            prev.setAttribute("x2", (b[0] / rect.width) * 1000); prev.setAttribute("y2", (b[1] / rect.height) * 1000);
+          };
+          svg.append(prev); upd();
+          svg.onpointermove = (m) => {
+            let q = pt(m);
+            if (m.shiftKey) {
+              const step = Math.PI / 12, ang = Math.round(Math.atan2(q[1] - a[1], q[0] - a[0]) / step) * step, d = Math.hypot(q[0] - a[0], q[1] - a[1]);
+              q = [a[0] + Math.cos(ang) * d, a[1] + Math.sin(ang) * d];
+            }
+            b = snapPt(q); upd();
+          };
+          svg.onpointerup = () => {
+            end(); prev.remove();
+            const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            if (len < 8) return;
+            const W = sf.host.offsetWidth, H = sf.host.offsetHeight, cx = (a[0] + b[0]) / 2, cy = (a[1] + b[1]) / 2;
+            addDeco({ kind: "line", w: len, t: st.t, color: st.color, dashed: false, arrow: "none",
+              rot: (Math.atan2(b[1] - a[1], b[0] - a[0]) * 180) / Math.PI, x: ((cx - len / 2) / W) * 100, y: ((cy - 9) / H) * 100 });
+          };
+          return;
+        }
         if (tool === "eraser") {
           erase(ev, rect, sf);
           svg.onpointermove = (m) => erase(m, rect, sf);
@@ -1081,6 +1195,18 @@
     return b;
   };
 
+  // a rainbow swatch that opens the color picker so you can choose ANY color (applies when you confirm)
+  const pickerSwatch = (onPick, current, on) => {
+    const wrap = el("label", "sw picker" + (on ? " on" : ""));
+    wrap.title = "Pick any color";
+    const input = el("input");
+    input.type = "color";
+    input.value = normHex(current && current !== "transparent" ? current : "") || "#d96c7a";
+    input.onchange = () => onPick(input.value);
+    wrap.append(input);
+    return wrap;
+  };
+
   function formatCmd(name, value) {
     if (!activeNote) return;
     activeNote.body.focus();
@@ -1116,6 +1242,13 @@
     if (opt) sel.value = first;
   }
 
+  // put the cursor/selection back in the text box (the color dialog takes focus away)
+  function withSelection(fn) {
+    if (!activeNote) return;
+    activeNote.body.focus();
+    if (savedRange) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); }
+    fn();
+  }
   const group = (...kids) => { const g = el("div", "grp"); g.append(...kids); return g; };
 
   function buildTextBar() {
@@ -1148,10 +1281,12 @@
         toolbarBtn("⇥", "Align right", () => formatCmd("justifyRight")),
       ),
       el("div", "break"),
-      group(el("span", "lbl", "Color"), ...INK_COLORS.map((c) => swatch(c, () => formatCmd("foreColor", c)))),
+      group(el("span", "lbl", "Color"), ...INK_COLORS.map((c) => swatch(c, () => formatCmd("foreColor", c))),
+        pickerSwatch((v) => withSelection(() => formatCmd("foreColor", v)), "#2b2b2b")),
       group(
         el("span", "lbl", "Highlight"),
         ...HILITE_COLORS.map((c) => swatch(c, () => formatCmd("hiliteColor", c))),
+        pickerSwatch((v) => withSelection(() => formatCmd("hiliteColor", hexToRgba(v, 0.5))), "#fff3a3"), // see-through, like a real highlighter
         swatch("transparent", () => formatCmd("hiliteColor", "transparent")),
       ),
     );
@@ -1159,9 +1294,7 @@
   }
 
   const DRAW_TOOLS = ["pen", "marker", "eraser"];
-  const ALL_TOOLS = ["move", "pen", "marker", "eraser", "dayfill"];
-  const DAY_FILLS = ["#ffe3e8", "#fff3c4", "#d9f2e1", "#d6ebff", "#ead9ff", "#ffe1c7", "#d8f1f1"];
-  let dayFill = DAY_FILLS[0];
+  const ALL_TOOLS = ["move", "pen", "marker", "eraser", "line"];
 
   function renderDrawBar() {
     const bar = $("drawbar");
@@ -1170,6 +1303,7 @@
       const cfg = tool === "marker" ? marker : pen;
       const colors = tool === "marker" ? MARKER_COLORS : INK_COLORS;
       colors.forEach((c) => bar.append(swatch(c, () => { cfg.color = c; renderDrawBar(); }, cfg.color === c)));
+      bar.append(pickerSwatch((v) => { cfg.color = v; renderDrawBar(); }, cfg.color, !colors.includes(cfg.color)));
       const range = el("input"); range.type = "range";
       range.min = tool === "marker" ? 8 : 1; range.max = tool === "marker" ? 40 : 14; range.value = cfg.width;
       range.title = "Thickness";
@@ -1188,13 +1322,6 @@
       }));
   }
 
-  function renderFillBar() {
-    const bar = $("fillbar");
-    bar.replaceChildren(el("span", "lbl", "Day color"));
-    DAY_FILLS.forEach((c) => bar.append(swatch(c, () => { dayFill = c; renderFillBar(); }, dayFill === c)));
-    bar.append(el("span", "lbl", "Click a day to color it · click again to clear"));
-  }
-
   // options for whatever is selected: order, copy, and style for blocks
   function renderItemBar() {
     const bar = $("itembar");
@@ -1203,7 +1330,8 @@
     const s = load(surface().dkey, []).find((x) => x.id === selectedId);
     if (!s) { selectedId = null; return; }
     const set = (props) => mutateSelected((x) => Object.assign(x, props));
-    const colors = (label, list, key, current) => group(el("span", "lbl", label), ...list.map((c) => swatch(c, () => set({ [key]: c }), current === c)));
+    const colors = (label, list, key, current, after) => group(el("span", "lbl", label), ...list.map((c) => swatch(c, () => (after || set)({ [key]: c }), current === c)),
+      pickerSwatch((v) => (after || set)({ [key]: v }), current, !list.includes(current)));
 
     bar.append(group(
       toolbarBtn("↑ Front", "Bring to front", () => mutateSelected((x, list) => { list.splice(list.indexOf(x), 1); list.push(x); })),
@@ -1226,6 +1354,18 @@
       bar.append(el("div", "break"),
         colors("Color", TAPE_COLORS, "color", s.color),
         group(el("span", "lbl", "Pattern"), ...TAPE_PATTERNS.map(([id, icon]) => toolbarBtn(icon, id, () => set({ pattern: id }), "tb" + (s.pattern === id ? " on" : "")))));
+    } else if (s.kind === "line") {
+      const setLine = (props) => { save("lastLine", { ...lastLine(), ...props }); set(props); };
+      const thick = el("input"); thick.type = "range"; thick.min = 1; thick.max = 16; thick.value = s.t || 3; thick.title = "Thickness";
+      thick.onchange = () => setLine({ t: +thick.value });
+      const arrows = ["none", "end", "both"];
+      bar.append(el("div", "break"),
+        colors("Color", LINE_PALETTE, "color", s.color, setLine),
+        group(el("span", "lbl", "Thin"), thick, el("span", "lbl", "Thick")),
+        group(
+          toolbarBtn("┄ Dashed", "Dashed or solid", () => set({ dashed: !s.dashed }), "tb" + (s.dashed ? " on" : "")),
+          toolbarBtn(s.arrow === "both" ? "↔ Arrows" : s.arrow === "end" ? "→ Arrow" : "— No arrow", "Cycle arrowheads", () => set({ arrow: arrows[(arrows.indexOf(s.arrow || "none") + 1) % 3] })),
+        ));
     } else if (s.kind === "banner") {
       bar.append(el("div", "break"), colors("Color", BANNER_COLORS, "fill", s.fill));
     } else if (s.kind === "habits") {
@@ -1237,19 +1377,16 @@
     $("textbar").hidden = !(tool === "move" && activeNote);
     $("itembar").hidden = !(tool === "move" && selectedId);
     $("drawbar").hidden = !DRAW_TOOLS.includes(tool);
-    $("fillbar").hidden = tool !== "dayfill";
-    $("subbar").hidden = ["textbar", "itembar", "drawbar", "fillbar"].every((id) => $(id).hidden);
+    $("subbar").hidden = ["textbar", "itembar", "drawbar"].every((id) => $(id).hidden);
   }
 
   function setActiveNote(n) { activeNote = n; if (!n) savedRange = null; updateSubbar(); syncFontSelect(); }
 
   function setTool(t) {
-    if (t === "dayfill" && !(view === "month" && activePage === "main")) t = "move";
     tool = t;
     for (const name of ALL_TOOLS) document.body.classList.toggle("tool-" + name, name === t);
     if (t !== "move") { setActiveNote(null); selectDeco(null); }
     renderDrawBar();
-    renderFillBar();
     updateSubbar();
     renderStickers(); // text boxes are only editable in "move" mode
     renderTrayTools();
@@ -1311,11 +1448,7 @@
     if (snap) snap.classList.toggle("on", snapOn);
   }
 
-  // the dock changes a little depending on which page you're on
   function updateDockContext() {
-    const fill = document.querySelector('#tray [data-tool="dayfill"]');
-    if (fill) fill.hidden = !(view === "month" && activePage === "main");
-    if (tool === "dayfill" && !(view === "month" && activePage === "main")) setTool("move");
     if (!$("block-panel").hidden) renderBlockPanel();
   }
 
@@ -1324,7 +1457,7 @@
     panel.replaceChildren(el("h2", null, "Add a block"));
     const grid = el("div", "bgrid");
     Object.entries(BLOCKS).forEach(([kind, def]) => {
-      if (def.weekOnly && view !== "week") return;
+      if (def.hidden) return;
       const b = el("button", "bcard");
       b.append(el("span", "bi", def.icon), el("span", "bl", def.label), el("span", "bd", def.hint));
       b.onclick = () => addDeco({ kind, ...def.defaults() });
@@ -1336,12 +1469,11 @@
   async function renderTray() {
     const tray = $("tray");
     tray.replaceChildren();
-    [["move", "☝ Select"], ["pen", "✏️ Pen"], ["marker", "🖍 Highlighter"], ["eraser", "⌫ Eraser"], ["dayfill", "🎨 Day color"]].forEach(([id, label]) => {
+    [["move", "☝ Select"], ["pen", "✏️ Pen"], ["marker", "🖍 Highlighter"], ["eraser", "⌫ Eraser"], ["line", "／ Line"]].forEach(([id, label]) => {
       const b = el("button", "pill" + (tool === id ? " on" : ""), label);
       b.dataset.tool = id;
       b.title = id === "move" ? "Move, resize and edit decorations" : "Click again to switch the tool off";
       b.onclick = () => setTool(tool === id && id !== "move" ? "move" : id);
-      if (id === "dayfill") b.hidden = !(view === "month" && activePage === "main");
       tray.append(b);
     });
     tray.append(el("div", "sep"));
@@ -1445,7 +1577,6 @@
     });
     buildTextBar();
     renderDrawBar();
-    renderFillBar();
     renderTray();
     setupInk();
   }
@@ -1471,7 +1602,7 @@
     } else if (store.needsSignIn) {
       st.textContent = "Sign in again";
       st.className = "sync err";
-      st.style.cssText = "background:#ffe9ec;border:1.5px solid #d96c7a;border-radius:999px;padding:4px 12px;color:#2b2b2b";
+      st.style.cssText = "background:var(--accent-soft);border:1.5px solid var(--accent);border-radius:999px;padding:4px 12px;color:#2b2b2b";
       st.title = store.error;
     } else if (store.loading) {
       st.textContent = "Syncing…";
@@ -1683,132 +1814,71 @@
     if (GoogleApi.available && GoogleApi.isConfigured() && GoogleApi.wasConnected()) enterGoogleMode();
   }
 
-  // ---------- month view ----------
-  const MONTH_ROW = GRID * 6; // each day box is 6 grid squares tall
-  const MONTH_MAX_LINES = 5;
-  const dayColorsKey = () => "daycolors:" + monthKey();
-  const tasksOn = (key) => (store.mode === "google" ? store.tasks : loadTasks()).filter((t) => t.date === key);
-
-  function renderMonth() {
-    const { gridStart, weeks } = monthGrid();
-    const head = $("m-head");
-    head.replaceChildren(...DAYS.map((d, i) => el("div", "m-dow" + (i === 0 || i === 6 ? " we" : ""), d.toUpperCase())));
-    const grid = $("m-grid");
-    grid.replaceChildren();
-    grid.style.gridTemplateRows = `repeat(${weeks}, ${MONTH_ROW}px)`;
-    const colors = load(dayColorsKey(), {});
-    const today = new Date();
-
-    for (let i = 0; i < weeks * 7; i++) {
-      const d = addDays(gridStart, i), key = dateKey(d);
-      const cell = el("div", "mcell" + (d.getMonth() !== monthAnchor.getMonth() ? " out" : "") + (sameDay(d, today) ? " today" : ""));
-      if (colors[key]) cell.style.setProperty("--fill", colors[key]);
-      cell.onclick = () => {
-        if (tool !== "dayfill") return;
-        const all = load(dayColorsKey(), {});
-        if (all[key] === dayFill) delete all[key]; else all[key] = dayFill;
-        save(dayColorsKey(), all);
-        renderMonth();
-      };
-
-      const num = el("button", "mnum", String(d.getDate()));
-      num.title = "Open this week";
-      num.onclick = (e) => { if (tool === "dayfill") return; e.stopPropagation(); goToWeek(d); };
-      cell.append(el("div", "mtop"), num);
-
-      const lines = [];
-      allDayOn(d).filter((e) => !hiddenCals.has(e.cal)).forEach((e) => lines.push({ k: "allday", e }));
-      eventsOn(d).filter((e) => !hiddenCals.has(e.cal)).sort((a, b) => a.start - b.start).forEach((e) => lines.push({ k: "ev", e }));
-      tasksOn(key).forEach((t) => lines.push({ k: "task", t }));
-      const shown = lines.length > MONTH_MAX_LINES ? lines.slice(0, MONTH_MAX_LINES - 1) : lines;
-
-      const list = el("div", "mlist");
-      shown.forEach((l) => {
-        let line;
-        if (l.k === "allday") {
-          line = el("div", "mline chip", l.e.title);
-          line.style.background = colorOf(l.e.cal);
-        } else if (l.k === "ev") {
-          line = el("div", "mline ev");
-          const dot = el("i", "dot"); dot.style.background = colorOf(l.e.cal);
-          line.append(dot, el("span", "mt", fmtTime(l.e.start).replace(/m$/, "")), el("span", "mtitle", l.e.title));
-        } else {
-          line = el("div", "mline task s-" + l.t.state);
-          line.append(el("span", "mk", markOf(l.t.state)), el("span", "mtitle", l.t.title));
-        }
-        const link = l.e && l.e.link;
-        if (link) { line.style.cursor = "pointer"; line.title = "Open in Google Calendar"; line.onclick = (ev) => { ev.stopPropagation(); if (tool !== "dayfill") window.open(link, "_blank", "noopener"); }; }
-        list.append(line);
-      });
-      if (shown.length < lines.length) {
-        const more = el("button", "mmore", `+${lines.length - shown.length} more`);
-        more.onclick = (ev) => { ev.stopPropagation(); if (tool !== "dayfill") goToWeek(d); };
-        list.append(more);
-      }
-      cell.append(list);
-      grid.append(cell);
-    }
-  }
-
-  // the checklist under the month grid
-  function renderMonthFoot() {
-    const foot = $("m-foot");
-    const key = "mlist:" + monthKey();
-    const items = load(key, []);
-    const persist = () => save(key, items);
-    const again = (focusNew) => { renderMonthFoot(); if (focusNew) { const i = foot.querySelector(".todo-line.new input"); if (i) i.focus(); } };
-    const list = el("div", "m-foot-list");
-    list.append(checklistRows(items, persist, again, 8));
-    foot.replaceChildren(el("div", "m-foot-title", "This month"), list);
-  }
-
   // ---------- free-style pages (the tabs on the right edge) ----------
+  // A page is exactly as big as the weekly spread, so flipping between them is seamless.
   const TAB_COLORS = ["#f6c6d0", "#fbe3a1", "#c8ecd6", "#cfe6ff", "#e6d6ff", "#ffd9bf"];
   const PAPERS = [["grid", "Grid"], ["dots", "Dots"], ["lines", "Lines"], ["blank", "Blank"]];
   const pagesKey = () => "pages:" + periodKey();
   const loadPages = () => load(pagesKey(), []);
   const currentPage = () => loadPages().find((p) => p.id === activePage);
+  const defaultTabColor = (i) => TAB_COLORS[i % TAB_COLORS.length];
+  function tabColorOf(id) {
+    if (id === "main") return load("tabColor:main", defaultTabColor(0));
+    const pages = loadPages(), i = pages.findIndex((p) => p.id === id);
+    return (pages[i] && pages[i].color) || defaultTabColor(i + 1);
+  }
+  function setTabColor(id, color) {
+    if (id === "main") { save("tabColor:main", color); return; }
+    const pages = loadPages(), p = pages.find((x) => x.id === id);
+    if (p) { p.color = color; save(pagesKey(), pages); }
+  }
 
-  // starter layouts, drawn with the same blocks you can add yourself
-  const T = (kind, x, y, props) => ({
-    id: uid(), kind, x: (x / PAGE_W) * 100, y: (y / PAGE_H) * 100, rot: 0,
-    ...(BLOCKS[kind] ? BLOCKS[kind].defaults() : {}), ...props,
-  });
-  const banner = (x, y, w, text, fill) => T("banner", x, y, { w, h: GRID, text, fill });
+  let spreadH = 0; // height of the weekly spread; pages copy it
+  function pageSize() {
+    return { W: document.querySelector(".surface-area").clientWidth - 4, H: (spreadH || 1000) - 4 };
+  }
+
+  // starter layouts, drawn with the same blocks you can add yourself. Sizes follow the spread.
   const TEMPLATES = {
     blank: { label: "Blank page", hint: "start from scratch", make: () => [] },
     dayrows: {
-      label: "Day by day", hint: "a row per day + side panels", weekOnly: true,
-      make: () => {
-        const items = [T("tape", 36, 14, { w: 150, h: 26, rot: -4 })];
+      label: "Day by day", hint: "a row per day + side panels",
+      make: (W, H) => {
+        const g = (v) => Math.round(v / GRID) * GRID;
+        const items = [];
+        const add = (kind, x, y, props) => items.push({ id: uid(), kind, x: (x / W) * 100, y: (y / H) * 100, rot: 0, ...(BLOCKS[kind] ? BLOCKS[kind].defaults() : {}), ...props });
+        const x0 = GRID, y0 = GRID * 2, rowH = g((H - GRID * 3) / 7), leftW = g(W * 0.6);
+        add("tape", x0 + 8, 8, { w: 150, h: 26, rot: -4 });
         for (let i = 0; i < 7; i++) {
-          const d = addDays(weekStart, i), y = 48 + i * 96;
-          items.push(T("box", 36, y, { w: 548, h: 96, fill: "transparent", border: "#2b2b2b", radius: 6 }));
-          items.push(T("box", 36, y, { w: 72, h: 96, fill: "#f6c6d0", border: "#2b2b2b", radius: 6 }));
-          items.push(T("text", 44, y + 14, { html: `<div style="text-align: center;"><b>${d.getDate()}</b></div><div style="text-align: center;">${DAYS[i].toUpperCase()}</div>`, size: 22, w: 56 }));
+          const d = addDays(weekStart, i), y = y0 + i * rowH;
+          add("box", x0, y, { w: leftW, h: rowH, fill: "transparent", border: "#2b2b2b", radius: 6 });
+          add("box", x0, y, { w: 72, h: rowH, fill: "#f6c6d0", border: "#2b2b2b", radius: 6 });
+          add("text", x0 + 8, y + rowH / 2 - 28, { html: `<div style="text-align: center;"><b>${d.getDate()}</b></div><div style="text-align: center;">${DAYS[i].toUpperCase()}</div>`, size: 22, w: 56 });
         }
-        items.push(
-          banner(636, 48, 528, "PRIORITIES", "#f6c6d0"), T("checklist", 636, 72, { w: 528 }),
-          banner(636, 216, 528, "HABITS", "#c8ecd6"),
-          T("habits", 636, 240, { w: 528, rows: ["Vitamins", "Stretch", "Walk", "Journal", "Water"].map((n) => ({ n, d: [] })) }),
-          banner(636, 408, 528, "NOTES", "#fbe3a1"),
-          T("box", 636, 432, { w: 528, h: 240, dashed: true, border: "#8a8a80", radius: 6 }),
-          T("minical", 948, 696, { w: 216 }),
-        );
+        const rx = x0 + leftW + GRID * 2, rw = g(W - rx - GRID), bottom = y0 + rowH * 7;
+        const topH = g((bottom - y0) * 0.45);
+        add("banner", rx, y0, { w: rw, h: GRID, text: "PRIORITIES", fill: "#f6c6d0" });
+        add("box", rx, y0 + GRID, { w: rw, h: topH - GRID, fill: "transparent", border: "#8a8a80", dashed: true, radius: 6 });
+        add("banner", rx, y0 + topH + GRID, { w: rw, h: GRID, text: "NOTES", fill: "#fbe3a1" });
+        add("box", rx, y0 + topH + GRID * 2, { w: rw, h: bottom - (y0 + topH + GRID * 2), fill: "transparent", border: "#8a8a80", dashed: true, radius: 6 });
         return items;
       },
     },
     dashboard: {
-      label: "Dashboard", hint: "priorities, habits, notes", make: () => [
-        banner(48, 48, 528, "PRIORITIES", "#f6c6d0"), T("checklist", 48, 72, { w: 528 }),
-        banner(48, 216, 528, "GRATITUDE", "#fbe3a1"), T("checklist", 48, 240, { w: 528 }),
-        banner(48, 408, 528, "NOTES", "#cfe6ff"), T("box", 48, 432, { w: 528, h: 336, dashed: true, border: "#8a8a80", radius: 6 }),
-        banner(636, 48, 528, "HABITS", "#c8ecd6"),
-        T("habits", 636, 72, { w: 528, rows: ["Vitamins", "Meditate", "Stretch", "Walk", "Journal", "Read"].map((n) => ({ n, d: [] })) }),
-        banner(636, 264, 528, "GOALS", "#e6d6ff"), T("checklist", 636, 288, { w: 528 }),
-        T("tape", 900, 14, { w: 170, h: 26, rot: 3, color: "#9fdcc0", pattern: "dots" }),
-        T("minical", 948, 696, { w: 216 }),
-      ],
+      label: "Dashboard", hint: "four labeled panels",
+      make: (W, H) => {
+        const g = (v) => Math.round(v / GRID) * GRID;
+        const items = [];
+        const add = (kind, x, y, props) => items.push({ id: uid(), kind, x: (x / W) * 100, y: (y / H) * 100, rot: 0, ...(BLOCKS[kind] ? BLOCKS[kind].defaults() : {}), ...props });
+        const m = GRID * 2, colW = g((W - m * 3) / 2), rowH = g((H - m * 3) / 2);
+        [["PRIORITIES", "#f6c6d0"], ["GRATITUDE", "#fbe3a1"], ["NOTES", "#cfe6ff"], ["GOALS", "#c8ecd6"]].forEach(([label, fill], i) => {
+          const x = m + (i % 2) * (colW + m), y = m + Math.floor(i / 2) * (rowH + m);
+          add("banner", x, y, { w: colW, h: GRID, text: label, fill });
+          add("box", x, y + GRID, { w: colW, h: rowH - GRID, fill: "transparent", border: "#8a8a80", dashed: true, radius: 6 });
+        });
+        add("tape", W - 220, 6, { w: 170, h: 26, rot: 3, color: "#9fdcc0", pattern: "dots" });
+        return items;
+      },
     },
   };
 
@@ -1816,50 +1886,162 @@
     activePage = id;
     selectDeco(null); setActiveNote(null);
     $("block-panel").hidden = true; $("emoji-panel").hidden = true;
+    closeMenu();
     render();
   }
 
   function addPage(template) {
+    const { W, H } = pageSize();
     const pages = loadPages();
     const page = { id: uid(), name: "Page " + (pages.length + 2), paper: "grid" };
     pages.push(page);
     save(pagesKey(), pages);
-    const items = TEMPLATES[template].make();
+    const items = TEMPLATES[template].make(W, H);
     if (items.length) save(`stickers:p:${periodKey()}:${page.id}`, items);
     setPage(page.id);
   }
 
   function deletePage(id) {
-    const pages = loadPages().filter((p) => p.id !== id);
-    save(pagesKey(), pages);
+    save(pagesKey(), loadPages().filter((p) => p.id !== id));
     try { localStorage.removeItem(`stickers:p:${periodKey()}:${id}`); localStorage.removeItem(`ink:p:${periodKey()}:${id}`); } catch {}
     setPage("main");
   }
 
-  // small pop-up menu next to the tabs
+  // ---------- event color mask ----------
+  const MOODS = [["pastel", "Pastel"], ["muted", "Muted"], ["bright", "Bright"], ["shades", "Shades of this color"], ["analogous", "Similar colors"]];
+  function makePalette(base, mood, n) {
+    const [h, s, l] = hexToHsl(base);
+    return Array.from({ length: Math.max(n, 1) }, (_, i) => {
+      const t = n > 1 ? i / (n - 1) : 0, alt = i % 2;
+      if (mood === "shades") return hslToHex(h, clamp(s, 35, 75), 88 - t * 50);               // light to dark, same hue
+      if (mood === "analogous") return hslToHex((h - 40 + t * 80 + 360) % 360, clamp(s, 45, 80), 74 - alt * 9); // neighbors on the color wheel
+      const hue = (h + (i * 360) / n) % 360;                                                    // spread around the wheel from your color
+      if (mood === "muted") return hslToHex(hue, 28, 64 - alt * 7);
+      if (mood === "bright") return hslToHex(hue, 88, 58 - alt * 7);
+      return hslToHex(hue, 70, 86 - alt * 5);                                                   // pastel
+    });
+  }
+  const saveMask = () => save("calMask", calMask);
+  function applyMaskChange() { saveMask(); renderData(); renderCalList(); refreshMenu(); }
+  function generatePalette() {
+    const cals = sortedCalendars(store.calendars);
+    const pal = makePalette(calMask.base, calMask.mood, cals.length);
+    cals.forEach((c, i) => { calMask.map[c.id] = pal[i]; });
+  }
+  // a round swatch showing a color; click to change it
+  const colorDot = (color, onPick) => {
+    const dot = pickerSwatch(onPick, color);
+    dot.classList.remove("picker"); dot.style.background = color;
+    return dot;
+  };
+
+  function buildMaskSection(menu) {
+    menu.append(el("div", "pm-title pm-sep", "Event colors"));
+    const modes = el("div", "pm-papers pm-two");
+    [["Google's colors", false], ["My colors", true]].forEach(([label, on]) => {
+      const b = el("button", "pm-paper" + (calMask.on === on ? " on" : ""), label);
+      b.onclick = () => {
+        calMask.on = on;
+        if (on && !Object.keys(calMask.map).length) generatePalette();
+        applyMaskChange();
+      };
+      modes.append(b);
+    });
+    menu.append(modes);
+    if (!calMask.on) { menu.append(el("p", "muted", "Show your calendars in colors that suit your planner instead of Google's.")); return; }
+
+    menu.append(el("label", "pm-label", "Make a palette from a color"));
+    const gen = el("div", "pm-gen");
+    const mood = el("select");
+    MOODS.forEach(([id, label]) => { const o = el("option", null, label); o.value = id; if (id === calMask.mood) o.selected = true; mood.append(o); });
+    mood.onchange = () => { calMask.mood = mood.value; saveMask(); };
+    const make = el("button", "pill on", "Make palette");
+    make.onclick = () => { generatePalette(); applyMaskChange(); };
+    gen.append(colorDot(calMask.base, (v) => { calMask.base = v; saveMask(); refreshMenu(); }), mood, make);
+    menu.append(gen);
+
+    menu.append(el("label", "pm-label", "Or choose each calendar's color"));
+    const list = el("div", "pm-cals");
+    sortedCalendars(store.calendars).forEach((c) => {
+      const row = el("div", "pm-cal");
+      row.append(colorDot(colorOf(c.id), (v) => { calMask.map[c.id] = v; applyMaskChange(); }), el("span", null, c.name));
+      list.append(row);
+    });
+    menu.append(list);
+  }
+
+  // ---------- pop-up menu next to the tabs ----------
+  let menuState = null;
   function showMenu(anchor, build) {
     const menu = $("page-menu");
+    menuState = { anchor, build };
     menu.replaceChildren();
     build(menu);
     menu.hidden = false;
     const r = anchor.getBoundingClientRect();
-    menu.style.top = Math.min(r.top, window.innerHeight - menu.offsetHeight - 10) + "px";
+    menu.style.top = Math.max(10, Math.min(r.top, window.innerHeight - menu.offsetHeight - 10)) + "px";
     menu.style.left = Math.max(10, r.left - menu.offsetWidth - 8) + "px";
   }
-  const closeMenu = () => { $("page-menu").hidden = true; };
+  const refreshMenu = () => { if (menuState && !$("page-menu").hidden) showMenu(menuState.anchor, menuState.build); };
+  const closeMenu = () => { $("page-menu").hidden = true; menuState = null; };
+
+  function buildTabMenu(id) {
+    return (menu) => {
+      const isMain = id === "main";
+      const page = isMain ? null : loadPages().find((p) => p.id === id);
+      if (!isMain && !page) return;
+      menu.append(el("div", "pm-title", isMain ? "Week tab" : "Page settings"));
+      if (page) {
+        const name = el("input"); name.value = page.name; name.maxLength = 24;
+        name.onchange = () => {
+          const pages = loadPages(), p = pages.find((x) => x.id === id);
+          if (p && name.value.trim()) { p.name = name.value.trim(); save(pagesKey(), pages); renderTabs(); }
+        };
+        menu.append(el("label", "pm-label", "Name"), name, el("label", "pm-label", "Paper"));
+        const paper = el("div", "pm-papers");
+        PAPERS.forEach(([pid, label]) => {
+          const b = el("button", "pm-paper" + (page.paper === pid ? " on" : ""), label);
+          b.onclick = () => {
+            const pages = loadPages(), p = pages.find((x) => x.id === id);
+            p.paper = pid; save(pagesKey(), pages); renderSurfaces(); refreshMenu();
+          };
+          paper.append(b);
+        });
+        menu.append(paper);
+      }
+      const cur = tabColorOf(id), row = el("div", "sw-row");
+      TAB_COLORS.forEach((c) => {
+        const b = el("button", "sw" + (cur === c ? " on" : ""));
+        b.style.background = c;
+        b.onclick = () => { setTabColor(id, c); renderTabs(); refreshMenu(); };
+        row.append(b);
+      });
+      row.append(pickerSwatch((v) => { setTabColor(id, v); renderTabs(); refreshMenu(); }, cur, !TAB_COLORS.includes(cur)));
+      menu.append(el("label", "pm-label", "Tab color"), row);
+      if (isMain) buildMaskSection(menu);
+      if (page) {
+        const del = el("button", "pm-del", "Delete this page");
+        del.onclick = () => { closeMenu(); if (confirm(`Delete "${page.name}" and everything on it?`)) deletePage(id); };
+        menu.append(del);
+      }
+    };
+  }
 
   function renderTabs() {
     const nav = $("page-tabs");
     nav.replaceChildren();
-    const tab = (id, name, i) => {
+    const tab = (id, name) => {
+      const color = tabColorOf(id);
       const b = el("button", "ptab" + (activePage === id ? " on" : ""), name);
-      b.style.setProperty("--tab", TAB_COLORS[i % TAB_COLORS.length]);
-      b.title = name;
-      b.onclick = () => { closeMenu(); setPage(id); };
+      b.style.setProperty("--tab", color);
+      b.style.color = textOn(color);
+      b.title = name + " · right-click for settings";
+      b.onclick = () => setPage(id);
+      b.oncontextmenu = (e) => { e.preventDefault(); showMenu(b, buildTabMenu(id)); };
       return b;
     };
-    nav.append(tab("main", view === "month" ? "Month" : "Week", 0));
-    loadPages().forEach((p, i) => nav.append(tab(p.id, p.name, i + 1)));
+    nav.append(tab("main", "Week"));
+    loadPages().forEach((p) => nav.append(tab(p.id, p.name)));
 
     const add = el("button", "ptab add", "＋");
     add.title = "Add a page";
@@ -1868,7 +2050,6 @@
       showMenu(add, (menu) => {
         menu.append(el("div", "pm-title", "Add a page"));
         Object.entries(TEMPLATES).forEach(([id, t]) => {
-          if (t.weekOnly && view !== "week") return;
           const b = el("button", "pm-item");
           b.append(el("b", null, t.label), el("span", null, t.hint));
           b.onclick = () => { closeMenu(); addPage(id); };
@@ -1878,56 +2059,35 @@
     };
     nav.append(add);
 
-    if (activePage !== "main") {
-      const gear = el("button", "ptab gear", "⋯");
-      gear.title = "Page settings";
-      gear.onclick = (e) => {
-        e.stopPropagation();
-        showMenu(gear, (menu) => {
-          const page = currentPage();
-          if (!page) return;
-          menu.append(el("div", "pm-title", "Page settings"));
-          const name = el("input"); name.value = page.name; name.maxLength = 24;
-          name.onchange = () => {
-            const pages = loadPages(); const p = pages.find((x) => x.id === activePage);
-            if (p && name.value.trim()) { p.name = name.value.trim(); save(pagesKey(), pages); renderTabs(); }
-          };
-          menu.append(el("label", "pm-label", "Name"), name, el("label", "pm-label", "Paper"));
-          const paper = el("div", "pm-papers");
-          PAPERS.forEach(([id, label]) => {
-            const b = el("button", "pm-paper" + (page.paper === id ? " on" : ""), label);
-            b.onclick = () => {
-              const pages = loadPages(); const p = pages.find((x) => x.id === activePage);
-              p.paper = id; save(pagesKey(), pages); closeMenu(); renderSurfaces();
-            };
-            paper.append(b);
-          });
-          const del = el("button", "pm-del", "Delete this page");
-          del.onclick = () => { closeMenu(); if (confirm(`Delete "${page.name}" and everything on it?`)) deletePage(activePage); };
-          menu.append(paper, del);
-        });
-      };
-      nav.append(gear);
-    }
+    const gear = el("button", "ptab gear", "⋯");
+    gear.title = "Settings for this tab (you can also right-click a tab)";
+    gear.onclick = (e) => { e.stopPropagation(); showMenu(gear, buildTabMenu(activePage)); };
+    nav.append(gear);
   }
 
   // ---------- which surface is showing ----------
+  // the spread is hidden while you're on a page, so measure it off-screen to keep the page exactly its size
+  function measureSpread() {
+    const sp = $("spread");
+    if (!sp.hidden) return sp.offsetHeight;
+    sp.hidden = false;
+    sp.style.cssText = `visibility:hidden;position:absolute;left:0;top:0;width:${document.querySelector(".surface-area").clientWidth}px`;
+    const h = sp.offsetHeight;
+    sp.hidden = true;
+    sp.style.cssText = "";
+    return h;
+  }
   function fitPage() {
     const frame = $("pframe");
-    if (frame.hidden || !frame.clientWidth) return;
-    const k = frame.clientWidth / PAGE_W;
-    $("pcanvas").style.transform = `scale(${k})`;
-    frame.style.height = PAGE_H * k + "px";
+    if (frame.hidden) return;
+    spreadH = measureSpread() || spreadH;
+    frame.style.height = spreadH + "px";
   }
 
   function renderSurfaces() {
     const main = activePage === "main";
-    $("spread").hidden = !(view === "week" && main);
-    $("mspread").hidden = !(view === "month" && main);
+    $("spread").hidden = !main;
     $("pframe").hidden = main;
-    document.querySelector(".layout").classList.toggle("wide", !(view === "week" && main));
-    $("view-week").classList.toggle("on", view === "week");
-    $("view-month").classList.toggle("on", view === "month");
     if (!main) {
       const page = currentPage();
       if (!page) { activePage = "main"; renderSurfaces(); return; }
@@ -1937,7 +2097,6 @@
   }
 
   // ---------- navigation ----------
-  const monthOf = (d) => new Date(d.getFullYear(), d.getMonth(), 1);
   function afterNavigate() {
     activePage = "main";
     selectDeco(null); setActiveNote(null); closeMenu();
@@ -1945,41 +2104,23 @@
     render();
     loadData();
   }
-  function jumpTo(d) { // show the week/month containing this date
-    weekStart = startOfWeek(d); monthAnchor = monthOf(d);
-    afterNavigate();
-  }
-  function goToWeek(d) { view = "week"; jumpTo(d); }
+  function jumpTo(d) { weekStart = startOfWeek(d); afterNavigate(); }
   function navigate(delta) {
-    if (view === "month") {
-      monthAnchor = delta === 0 ? monthOf(new Date()) : new Date(monthAnchor.getFullYear(), monthAnchor.getMonth() + delta, 1);
-      const t = new Date();
-      weekStart = startOfWeek(t.getFullYear() === monthAnchor.getFullYear() && t.getMonth() === monthAnchor.getMonth() ? t : monthAnchor);
-    } else {
-      weekStart = delta === 0 ? startOfWeek(new Date()) : addDays(weekStart, 7 * delta);
-      monthAnchor = monthOf(addDays(weekStart, 3));
-    }
-    afterNavigate();
-  }
-  function setView(v) {
-    if (v === view) return;
-    view = v;
-    if (v === "month") monthAnchor = monthOf(addDays(weekStart, 3));
+    weekStart = delta === 0 ? startOfWeek(new Date()) : addDays(weekStart, 7 * delta);
     afterNavigate();
   }
 
   // ---------- wiring ----------
   function renderData() {
-    if (activePage === "main" && view === "week") { renderTodos(); renderAllDay(); renderTimeline(); }
-    if (activePage === "main" && view === "month") renderMonth();
+    if (activePage === "main") { renderTodos(); renderAllDay(); renderTimeline(); }
     renderCalList();
     refreshAgendas();
   }
   function render() {
     renderTitle();
     renderSurfaces();
-    if (activePage === "main" && view === "week") { renderHead(); renderTodos(); renderAllDay(); renderTimeline(); renderGoals(); renderHabits(); }
-    if (activePage === "main" && view === "month") { renderMonth(); renderMonthFoot(); }
+    if (activePage === "main") { renderHead(); renderTodos(); renderAllDay(); renderTimeline(); spreadH = $("spread").offsetHeight; }
+    renderGoals(); renderHabits(); // the side panels stay with you on every page
     renderMiniCal(); renderCalList(); renderTabs(); renderInk(); renderStickers();
     updateStatus(); updateDockContext();
   }
@@ -1987,12 +2128,12 @@
   $("today-btn").onclick = () => navigate(0);
   $("prev-btn").onclick = () => navigate(-1);
   $("next-btn").onclick = () => navigate(1);
-  $("view-week").onclick = () => setView("week");
-  $("view-month").onclick = () => setView("month");
   document.addEventListener("pointerdown", (e) => { if (!e.target.closest("#page-menu, .ptab")) closeMenu(); });
-  new ResizeObserver(fitPage).observe($("pframe"));
+  window.addEventListener("resize", fitPage);
+  new ResizeObserver(() => { if (!$("spread").hidden && $("spread").offsetHeight) { spreadH = $("spread").offsetHeight; fitPage(); } }).observe($("spread"));
 
   document.body.classList.add("tool-move");
+  applyAccent();
   setupFonts();
   setupDecorating();
   render();

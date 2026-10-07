@@ -121,6 +121,7 @@ const GoogleApi = (() => {
       color: c.backgroundColor || "#cfcfc6",
       selected: !!c.selected,
       primary: !!c.primary,
+      role: c.accessRole,
     }));
   }
 
