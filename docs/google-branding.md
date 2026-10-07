@@ -1,41 +1,40 @@
-# Google Cloud: branding & publishing cheat sheet
+# Google Cloud: branding & publishing cheat sheet for bullet.ly
 
 Copy these into **Google Cloud Console → Google Auth Platform → Branding** (older UI: *OAuth consent screen*).
 
 > **Before you start:** open `docs/privacy.html` and replace `YOUR-EMAIL-HERE` with an email you're happy
-> to have on a public page. Then host the `docs/` folder somewhere public (see "Hosting the two pages").
+> to have on a public page, then commit and push. Then turn on GitHub Pages (steps below).
 
 | Field | What to enter |
 |---|---|
-| **App name** | `Living Planner` (see the note on the name below) |
+| **App name** | `bullet.ly` |
 | **User support email** | your Google account email (pick it from the dropdown) |
 | **App logo** | upload `docs/logo-120.png` (120 × 120 PNG, well under the 1 MB limit) |
-| **Application home page** | the public URL of `index.html` |
-| **Application privacy policy link** | the public URL of `privacy.html` |
+| **Application home page** | `https://renchuie.github.io/bullet.ly/` |
+| **Application privacy policy link** | `https://renchuie.github.io/bullet.ly/privacy.html` |
 | **Application terms of service link** | optional. Leave blank. |
-| **Authorized domains** | the domain of those links (e.g. `netlify.app`, `pages.dev`). Google may not accept a shared domain like `github.io`; if it complains, see "If Google rejects the domain". |
+| **Authorized domains** | `github.io` if Google accepts it, otherwise leave empty (see "If Google rejects the domain") |
 | **Developer contact information** | your email |
 
-## About the app name
-Google can reject names that look like they're made by or endorsed by Google. **"Living GCal" contains "GCal"**,
-which is an abbreviation of a Google product name, so it's a likely reason for a rejection. The pages and logo
-here use **Living Planner**. You can keep calling the extension "Living GCal" for yourself; only the name on
-Google's consent screen needs to be safe. If you'd rather use another name, tell me and I'll update the pages.
+## Turning on GitHub Pages (the repo is public now, so this is free)
+1. Go to <https://github.com/renchuie/bullet.ly/settings/pages>.
+2. **Source:** Deploy from a branch.
+3. **Branch:** pick the branch that has the `docs` folder (currently `claude/vibrant-brahmagupta-zkku0p`),
+   and set the folder to **`/docs`**. Click **Save**.
+4. After a minute or two, open `https://renchuie.github.io/bullet.ly/`. You should see the bullet.ly homepage.
+   Check `https://renchuie.github.io/bullet.ly/privacy.html` too. Google needs both to load before it will accept them.
 
-## Hosting the two pages
-They're plain static files, so any free static host works:
-- **GitHub Pages** (free for *public* repos only; this repo is currently private). Make the repo public, then
-  Settings → Pages → Deploy from a branch → choose the branch and the `/docs` folder.
-  Your links become `https://<your-username>.github.io/living-gcal/` and `.../privacy.html`.
-  (Safe to make public: no keys or secrets are stored in this repo. Your Client ID lives only in your browser.)
-- **Netlify Drop** (<https://app.netlify.com/drop>): drag the `docs` folder onto the page. No account setup needed for a quick start.
-- **Cloudflare Pages / Vercel**: connect a repo or upload the folder.
+(If you later merge into `main`, switch Pages to `main` + `/docs`.)
+
+## About the name
+`bullet.ly` looks a bit like a web address. If Google objects to the name on the consent screen, use
+`bullet.ly planner` there instead. Only the name on Google's screen needs to match your homepage; the
+extension itself can keep its name.
 
 ## Publishing the app (so you aren't signed out every 7 days)
 Google Auth Platform → **Audience** → **Publish app** → confirm. Because you use sensitive scopes, Google will say the
-app needs verification. For personal use you can ignore that: skip verification and just accept the
-"unverified app" screen when you sign in (**Advanced → Go to Living Planner**). Unverified apps are capped
-at 100 users, which is far more than you need.
+app needs verification. For personal use you can skip that and just accept the "unverified app" screen when you
+sign in (**Advanced → Go to bullet.ly**). Unverified apps are capped at 100 users, far more than you need.
 
 ## If you ever do submit for verification
 You'd also need a short justification for each scope. Suggested wording:
@@ -43,6 +42,6 @@ You'd also need a short justification for each scope. Suggested wording:
 - `tasks`: "Shows the user's to-dos on their due date and lets them mark tasks complete, add and rename tasks from the planner."
 
 ## If Google rejects the domain
-Shared domains (`github.io`, `netlify.app`, …) often can't be verified as *authorized domains*. Options: leave
-the field empty (it's only enforced during verification, not for unverified personal use), or use your own
-domain (about $10/year) pointed at the static host.
+Shared domains like `github.io` often can't be verified as *authorized domains*. Options: leave the field empty
+(it's only enforced during verification, not for unverified personal use), or use your own domain (about $10/year)
+pointed at GitHub Pages.

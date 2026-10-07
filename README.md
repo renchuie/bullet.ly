@@ -1,4 +1,4 @@
-# Living GCal
+# bullet.ly
 
 A Firefox extension that opens a bullet-journal style weekly planner for Google Calendar:
 grid-paper spread, a bullet-journal to-do list (Google Tasks) above each day, a habit tracker on the side,
@@ -11,7 +11,7 @@ Once connected, events come from Google Calendar (read-only) and to-dos from Goo
 ## Try it in Firefox
 1. Open `about:debugging#/runtime/this-firefox`
 2. Click **Load Temporary Add-on...** and pick `manifest.json`
-3. Click the Living GCal toolbar button
+3. Click the bullet.ly toolbar button
 
 (Or just open `src/planner.html` in a browser to preview the layout.)
 

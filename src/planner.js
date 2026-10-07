@@ -1,4 +1,4 @@
-// Living GCal planner (prototype: events/tasks come from fake data in mock-data.js)
+// bullet.ly planner (prototype: events/tasks come from fake data in mock-data.js)
 (() => {
   const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const START_HOUR = 6, END_HOUR = 23;

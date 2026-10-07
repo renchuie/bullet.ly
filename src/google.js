@@ -1,4 +1,4 @@
-// Google sign-in + Calendar / Tasks API calls for Living GCal.
+// Google sign-in + Calendar / Tasks API calls for bullet.ly.
 //
 // Sign-in uses the "implicit" OAuth flow through Firefox's identity API, so the only thing you need
 // is your own Client ID (no secret). Access tokens last about an hour; the extension renews them
