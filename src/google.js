@@ -131,7 +131,7 @@ const GoogleApi = (() => {
     for (let page = 0; page < 5; page++) {
       const data = await api(`${CAL}/calendars/${encodeURIComponent(calendarId)}/events?${qs({
         singleEvents: "true", orderBy: "startTime", maxResults: 250, timeMin, timeMax, pageToken,
-        fields: "nextPageToken,items(id,summary,status,start,end,htmlLink,eventType,attendees(self,responseStatus))",
+        fields: "nextPageToken,items(id,summary,description,location,status,start,end,htmlLink,eventType,hangoutLink,recurringEventId,recurrence,organizer(displayName,email,self),attendees(displayName,email,responseStatus,self,organizer,resource),conferenceData(entryPoints(entryPointType,uri)))",
       })}`);
       out.push(...(data.items || []));
       pageToken = data.nextPageToken;

@@ -19,5 +19,6 @@ Once connected, events come from Google Calendar (read-only) and to-dos from Goo
 1. Layout with fake data (done)
 2. Google sign-in, read Calendar + Tasks, write Tasks (done)
 3. Free-style pages, color mask, accent color (done)
-4. Create/edit events from the planner
-5. Save habits, stickers and pages to the cloud, themes
+4. Event details card and right-click menu (done)
+5. Create/edit events from the planner
+6. Save habits, stickers and pages to the cloud, themes

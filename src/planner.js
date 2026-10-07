@@ -400,7 +400,7 @@
         const chip = el("div", "chip", e.title);
         chip.style.background = colorOf(e.cal);
         chip.style.color = textOn(colorOf(e.cal));
-        if (e.link) { chip.dataset.link = e.link; chip.style.cursor = "pointer"; chip.onclick = () => window.open(e.link, "_blank", "noopener"); }
+        wireEvent(chip, e, addDays(weekStart, i));
         cell.append(chip);
       });
       row.append(cell);
@@ -456,7 +456,7 @@
         box.style.width = 100 / e.lanes - 2 + "%";
         const bg = colorOf(e.cal);
         box.style.background = bg; box.style.color = textOn(bg);
-        if (e.link) { box.dataset.link = e.link; box.title = "Open in Google Calendar"; box.onclick = () => { if (!decorating) window.open(e.link, "_blank", "noopener"); }; }
+        wireEvent(box, e, d);
         // like Google Calendar: short events get one line ("Title, 9:05am"), longer ones title + time range
         if (e.end - e.start < 0.75) { box.classList.add("short"); box.append(el("div", "t", `${e.title}, ${fmtTime(e.start)}`)); }
         else box.append(el("div", "t", e.title), el("div", "time", fmtRange(e.start, e.end)));
@@ -1624,13 +1624,23 @@
     if ((e.attendees || []).some((a) => a.self && a.responseStatus === "declined")) return;
     const title = e.summary || "(no title)";
     const link = e.htmlLink;
+    const meet = e.hangoutLink || ((e.conferenceData && e.conferenceData.entryPoints) || []).filter((x) => x.entryPointType === "video").map((x) => x.uri)[0] || "";
+    const isAllDay = !!(e.start && e.start.date);
+    const info = { // everything the details card shows
+      id: e.id, title, description: e.description || "", location: e.location || "", meet, link, calendarId: calId,
+      repeats: !!(e.recurringEventId || e.recurrence), allDay: isAllDay,
+      organizer: e.organizer ? { name: e.organizer.displayName || "", email: e.organizer.email || "", self: !!e.organizer.self } : null,
+      attendees: (e.attendees || []).filter((a) => !a.resource).map((a) => ({ name: a.displayName || "", email: a.email || "", status: a.responseStatus || "needsAction", self: !!a.self, organizer: !!a.organizer })),
+      start: isAllDay ? new Date(e.start.date + "T00:00:00") : new Date(e.start.dateTime),
+      end: isAllDay ? addDays(new Date(e.end.date + "T00:00:00"), -1) : new Date(e.end.dateTime), // all-day end is exclusive in Google's data
+    };
     if (e.start && e.start.dateTime) {
       const s = new Date(e.start.dateTime), en = new Date(e.end.dateTime);
       for (let i = 0; i < range.days; i++) {
         const dayStart = addDays(range.start, i), dayEnd = addDays(range.start, i + 1);
         if (s < dayEnd && en > dayStart) {
           events.push({
-            date: dateKey(dayStart), title, cal: calId, link,
+            date: dateKey(dayStart), title, cal: calId, link, info,
             start: (Math.max(s, dayStart) - dayStart) / 36e5,
             end: (Math.min(en, dayEnd) - dayStart) / 36e5,
           });
@@ -1640,7 +1650,7 @@
       const s = new Date(e.start.date + "T00:00:00"), en = new Date(e.end.date + "T00:00:00"); // end is exclusive
       for (let i = 0; i < range.days; i++) {
         const d = addDays(range.start, i);
-        if (d >= s && d < en) allDay.push({ date: dateKey(d), title, cal: calId, link });
+        if (d >= s && d < en) allDay.push({ date: dateKey(d), title, cal: calId, link, info });
       }
     }
   }
@@ -1813,6 +1823,208 @@
     updateStatus();
     if (GoogleApi.available && GoogleApi.isConfigured() && GoogleApi.wasConnected()) enterGoogleMode();
   }
+
+  // ---------- event details (click) and right-click menu ----------
+  // Descriptions come from Google (and from other people's invites), so they're rebuilt from a short list of
+  // harmless tags and only http(s) links are kept.
+  const DESC_TAGS = new Set(["A", "B", "STRONG", "I", "EM", "U", "BR", "P", "DIV", "UL", "OL", "LI", "SPAN"]);
+  function safeLink(href) {
+    try { const u = new URL(href); return u.protocol === "http:" || u.protocol === "https:" ? u.href : null; } catch { return null; }
+  }
+  function makeLink(href, text) {
+    const a = el("a", null, text);
+    a.href = href; a.target = "_blank"; a.rel = "noopener noreferrer";
+    return a;
+  }
+  function descInto(parent, src) {
+    for (const n of src.childNodes) {
+      if (n.nodeType === 3) { parent.append(document.createTextNode(n.nodeValue)); continue; }
+      if (n.nodeType !== 1 || n.tagName === "SCRIPT" || n.tagName === "STYLE") continue;
+      if (!DESC_TAGS.has(n.tagName)) { descInto(parent, n); continue; }
+      if (n.tagName === "A") {
+        const href = safeLink(n.getAttribute("href") || "");
+        const a = href ? makeLink(href, "") : document.createElement("span");
+        descInto(a, n); parent.append(a);
+        continue;
+      }
+      const c = document.createElement(n.tagName.toLowerCase());
+      descInto(c, n); parent.append(c);
+    }
+  }
+  const looksLikeHtml = (t) => /<[a-z][\s\S]*>/i.test(t);
+  function descFragment(desc) {
+    const frag = document.createDocumentFragment();
+    if (!desc) return frag;
+    if (looksLikeHtml(desc)) descInto(frag, new DOMParser().parseFromString(desc, "text/html").body);
+    else desc.split(/(https?:\/\/[^\s<]+)/g).forEach((part, i) => frag.append(i % 2 && safeLink(part) ? makeLink(part, part) : document.createTextNode(part)));
+    return frag;
+  }
+  function descText(desc) {
+    const d = document.createElement("div");
+    d.append(descFragment(desc));
+    d.querySelectorAll("br").forEach((b) => b.replaceWith("\n"));
+    d.querySelectorAll("p, div, li").forEach((b) => b.append("\n"));
+    return d.textContent.replace(/\n{3,}/g, "\n\n").trim();
+  }
+
+  // everything we know about an event: from Google, or built from the demo data
+  function eventInfo(e, date) {
+    if (e.info) return e.info;
+    const at = (h) => { const d = new Date(date); d.setHours(0, 0, 0, 0); d.setMinutes(Math.round(h * 60)); return d; };
+    const timed = e.start !== undefined;
+    return {
+      title: e.title, allDay: !timed, start: timed ? at(e.start) : new Date(date), end: timed ? at(e.end) : new Date(date),
+      description: e.desc || "", location: e.loc || "", meet: e.meet || "", link: e.link || "", calendarId: e.cal,
+      attendees: e.guests || [], organizer: null, repeats: store.mode !== "google",
+    };
+  }
+  const hoursOf = (d) => d.getHours() + d.getMinutes() / 60;
+  function fmtWhen(info) {
+    const long = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+    const short = (d) => d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    if (info.allDay) return sameDay(info.start, info.end) ? `${long(info.start)} · All day` : `${short(info.start)} – ${short(info.end)} · All day`;
+    const endsAtMidnight = info.end.getHours() === 0 && info.end.getMinutes() === 0;
+    if (sameDay(info.start, info.end) || (endsAtMidnight && sameDay(info.start, addDays(info.end, -1)))) {
+      return `${long(info.start)} · ${fmtRange(hoursOf(info.start), hoursOf(info.end) || 24)}`;
+    }
+    return `${short(info.start)} ${fmtTime(hoursOf(info.start))} – ${short(info.end)} ${fmtTime(hoursOf(info.end))}`;
+  }
+  const calName = (id) => (store.calendars.find((c) => c.id === id) || {}).name || "";
+
+  let toastTimer = null;
+  function toast(msg) {
+    const t = $("toast");
+    t.textContent = msg; t.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { t.hidden = true; }, 2000);
+  }
+
+  let cardAnchor = null;
+  function closeEventUI() { $("event-card").hidden = true; $("ctx-menu").hidden = true; cardAnchor = null; }
+
+  const GUEST_MARK = { accepted: ["✓", "yes"], declined: ["✕", "no"], tentative: ["?", "maybe"], needsAction: ["•", "no reply"] };
+
+  function openEventCard(e, anchor, date) {
+    const card = $("event-card");
+    if (!card.hidden && cardAnchor === anchor) { closeEventUI(); return; } // click the same event again to close
+    closeEventUI();
+    const info = eventInfo(e, date);
+    card.replaceChildren();
+    card.style.setProperty("--ec", colorOf(e.cal));
+
+    const row = (icon, ...kids) => {
+      const r = el("div", "ec-row"), body = el("div", "ec-body");
+      body.append(...kids);
+      r.append(el("span", "ec-ico", icon), body);
+      return r;
+    };
+    const close = el("button", "ec-close", "×"); close.title = "Close"; close.onclick = closeEventUI;
+    card.append(el("div", "ec-bar"), close, el("h3", "ec-title", info.title));
+
+    const when = row("🕒", el("div", null, fmtWhen(info)));
+    if (info.repeats) when.querySelector(".ec-body").append(el("div", "ec-sub", "Repeats"));
+    card.append(when);
+
+    if (info.meet) {
+      const join = makeLink(safeLink(info.meet) || "#", "Join video call");
+      join.className = "ec-join";
+      card.append(row("🎥", join));
+    }
+    if (info.location) {
+      const loc = el("div");
+      loc.append(makeLink("https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(info.location), info.location));
+      card.append(row("📍", loc));
+    }
+    if (info.description) {
+      const d = el("div", "ec-desc" + (looksLikeHtml(info.description) ? " html" : ""));
+      d.append(descFragment(info.description));
+      card.append(row("📝", d));
+    }
+    if (info.attendees.length) {
+      const counts = { accepted: 0, declined: 0, tentative: 0, needsAction: 0 };
+      info.attendees.forEach((a) => { counts[a.status] = (counts[a.status] || 0) + 1; });
+      const n = info.attendees.length;
+      const summary = [`${n} guest${n > 1 ? "s" : ""}`, counts.accepted && `${counts.accepted} yes`, counts.declined && `${counts.declined} no`, counts.tentative && `${counts.tentative} maybe`, counts.needsAction && `${counts.needsAction} no reply`].filter(Boolean).join(" · ");
+      const list = el("div", "ec-guests");
+      info.attendees.slice(0, 8).forEach((a) => {
+        const [mark, word] = GUEST_MARK[a.status] || GUEST_MARK.needsAction;
+        const line = el("div", "ec-guest");
+        const m = el("span", "gm gm-" + a.status, mark); m.title = word;
+        line.append(m, el("span", null, (a.name || a.email) + (a.self ? " (you)" : "") + (a.organizer ? " · organizer" : "")));
+        list.append(line);
+      });
+      if (n > 8) list.append(el("div", "ec-sub", `+${n - 8} more`));
+      card.append(row("👥", el("div", null, summary), list));
+    } else if (info.organizer && !info.organizer.self) {
+      card.append(row("👤", el("div", null, "Organizer: " + (info.organizer.name || info.organizer.email))));
+    }
+
+    const cal = el("div", "ec-cal");
+    const dot = el("i", "dot"); dot.style.background = colorOf(e.cal);
+    cal.append(dot, el("span", null, calName(e.cal) || "Calendar"));
+    card.append(row("📅", cal));
+
+    if (info.link && safeLink(info.link)) {
+      const actions = el("div", "ec-actions");
+      const open = makeLink(safeLink(info.link), "Open in Google Calendar ↗");
+      open.className = "ec-open";
+      actions.append(open);
+      card.append(actions);
+    }
+
+    card.hidden = false;
+    cardAnchor = anchor;
+    const r = anchor.getBoundingClientRect(), w = card.offsetWidth, h = card.offsetHeight;
+    let left = r.right + 10;
+    if (left + w > window.innerWidth - 10) left = r.left - w - 10;
+    if (left < 10) left = clamp(r.left, 10, window.innerWidth - w - 10);
+    card.style.left = left + "px";
+    card.style.top = clamp(r.top, 10, Math.max(10, window.innerHeight - h - 10)) + "px";
+  }
+
+  function copyEvent(info) {
+    const lines = [info.title, fmtWhen(info)];
+    if (info.location) lines.push("Where: " + info.location);
+    if (info.meet) lines.push("Video call: " + info.meet);
+    const d = descText(info.description);
+    if (d) lines.push("", d);
+    if (info.link) lines.push("", info.link);
+    (navigator.clipboard ? navigator.clipboard.writeText(lines.join("\n")) : Promise.reject()).then(() => toast("Copied event details"), () => toast("Couldn't copy to the clipboard"));
+  }
+
+  function openEventMenu(ev, e, anchor, date) {
+    const info = eventInfo(e, date);
+    const menu = $("ctx-menu");
+    closeEventUI();
+    menu.replaceChildren();
+    const item = (icon, label, fn) => {
+      const b = el("button", "cm-item");
+      b.append(el("span", "cm-ico", icon), el("span", null, label));
+      b.onclick = () => { closeEventUI(); fn(); };
+      menu.append(b);
+    };
+    item("👁", "View details", () => openEventCard(e, anchor, date));
+    if (info.meet && safeLink(info.meet)) item("🎥", "Join video call", () => window.open(safeLink(info.meet), "_blank", "noopener"));
+    if (info.link && safeLink(info.link)) item("↗", "Open in Google Calendar", () => window.open(safeLink(info.link), "_blank", "noopener"));
+    item("📋", "Copy details", () => copyEvent(info));
+    menu.hidden = false;
+    menu.style.left = clamp(ev.clientX, 10, window.innerWidth - menu.offsetWidth - 10) + "px";
+    menu.style.top = clamp(ev.clientY, 10, window.innerHeight - menu.offsetHeight - 10) + "px";
+  }
+
+  // click = details, right-click = menu (both are switched off while you're decorating)
+  function wireEvent(node, e, date) {
+    const info = eventInfo(e, date);
+    node.tabIndex = 0;
+    node.setAttribute("role", "button");
+    node.title = `${info.title}\n${fmtWhen(info)}`;
+    node.onclick = (ev) => { if (decorating) return; ev.stopPropagation(); openEventCard(e, node, date); };
+    node.onkeydown = (ev) => { if (!decorating && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); openEventCard(e, node, date); } };
+    node.oncontextmenu = (ev) => { if (decorating) return; ev.preventDefault(); openEventMenu(ev, e, node, date); };
+  }
+  document.addEventListener("pointerdown", (ev) => { if (!ev.target.closest("#event-card, #ctx-menu, .event, .chip")) closeEventUI(); });
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeEventUI(); });
+  window.addEventListener("scroll", closeEventUI, true);
 
   // ---------- free-style pages (the tabs on the right edge) ----------
   // A page is exactly as big as the weekly spread, so flipping between them is seamless.
@@ -2117,6 +2329,7 @@
     refreshAgendas();
   }
   function render() {
+    closeEventUI();
     renderTitle();
     renderSurfaces();
     if (activePage === "main") { renderHead(); renderTodos(); renderAllDay(); renderTimeline(); fitGrid(); spreadH = $("spread").offsetHeight; }
