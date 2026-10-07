@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Living GCal</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;700&family=Patrick+Hand&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="planner.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">Living GCal</div>
+    <button id="today-btn" class="pill">Today</button>
+    <button id="prev-btn" class="icon-btn" aria-label="Previous week">‹</button>
+    <button id="next-btn" class="icon-btn" aria-label="Next week">›</button>
+    <h1 id="title"></h1>
+    <button id="sticker-toggle" class="pill">✿ Decorate</button>
+  </header>
+
+  <div class="layout">
+    <aside class="left">
+      <section class="card">
+        <div id="mini-cal"></div>
+      </section>
+      <section class="card">
+        <h2>My calendars</h2>
+        <ul id="cal-list" class="cal-list"></ul>
+      </section>
+    </aside>
+
+    <main class="spread" id="spread">
+      <div class="week-head" id="week-head"></div>
+      <div class="todo-row" id="todo-row"></div>
+      <div class="allday-row" id="allday-row"></div>
+      <div class="timeline" id="timeline"></div>
+      <div class="sticker-layer" id="sticker-layer"></div>
+    </main>
+
+    <aside class="right">
+      <section class="card">
+        <h2>Weekly goals</h2>
+        <ul id="goals" class="goals"></ul>
+      </section>
+      <section class="card">
+        <h2>Habit tracker</h2>
+        <div id="habits"></div>
+      </section>
+    </aside>
+  </div>
+
+  <div class="tray" id="tray" hidden></div>
+
+  <script src="mock-data.js"></script>
+  <script src="planner.js"></script>
+</body>
+</html>
