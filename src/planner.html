@@ -16,6 +16,11 @@
     <button id="prev-btn" class="icon-btn" aria-label="Previous week">‹</button>
     <button id="next-btn" class="icon-btn" aria-label="Next week">›</button>
     <h1 id="title"></h1>
+    <div class="seg" role="group" aria-label="View">
+      <button id="view-week" class="on">Week</button>
+      <button id="view-month">Month</button>
+    </div>
+    <span class="grow"></span>
     <span id="sync-status" class="sync"></span>
     <button id="refresh-btn" class="icon-btn" title="Sync now" hidden>↻</button>
     <button id="google-btn" class="pill">Connect Google</button>
@@ -49,13 +54,36 @@
       </section>
     </aside>
 
-    <main class="spread" id="spread">
-      <div class="week-head" id="week-head"></div>
-      <div class="todo-row" id="todo-row"></div>
-      <div class="allday-row" id="allday-row"></div>
-      <div class="timeline" id="timeline"></div>
-      <svg id="ink-layer" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
-      <div class="sticker-layer" id="sticker-layer"></div>
+    <main class="stage">
+      <div class="surface-area">
+        <!-- week spread -->
+        <section class="spread" id="spread">
+          <div class="week-head" id="week-head"></div>
+          <div class="todo-row" id="todo-row"></div>
+          <div class="allday-row" id="allday-row"></div>
+          <div class="timeline" id="timeline"></div>
+          <svg class="ink-layer" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
+          <div class="sticker-layer"></div>
+        </section>
+
+        <!-- month spread -->
+        <section class="mspread" id="mspread" hidden>
+          <div class="m-head" id="m-head"></div>
+          <div class="m-grid" id="m-grid"></div>
+          <div class="m-foot" id="m-foot"></div>
+          <svg class="ink-layer" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
+          <div class="sticker-layer"></div>
+        </section>
+
+        <!-- free-style page: a fixed-size sheet scaled to fit -->
+        <section class="pframe" id="pframe" hidden>
+          <div class="pcanvas paper-grid" id="pcanvas">
+            <svg class="ink-layer" viewBox="0 0 1000 1000" preserveAspectRatio="none"></svg>
+            <div class="sticker-layer"></div>
+          </div>
+        </section>
+      </div>
+      <nav class="page-tabs" id="page-tabs" aria-label="Pages"></nav>
     </main>
 
     <aside class="right">
@@ -70,11 +98,16 @@
     </aside>
   </div>
 
+  <div class="page-menu card" id="page-menu" hidden></div>
+
   <div class="dock" id="dock" hidden>
     <div class="emoji-panel card" id="emoji-panel" hidden></div>
+    <div class="block-panel card" id="block-panel" hidden></div>
     <div class="subbar" id="subbar" hidden>
       <div id="textbar" hidden></div>
+      <div id="itembar" hidden></div>
       <div id="drawbar" hidden></div>
+      <div id="fillbar" hidden></div>
     </div>
     <div class="tray" id="tray"></div>
   </div>

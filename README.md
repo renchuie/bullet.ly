@@ -1,7 +1,7 @@
 # bullet.ly
 
 A Firefox extension that opens a bullet-journal style weekly planner for Google Calendar:
-grid-paper spread, a bullet-journal to-do list (Google Tasks) above each day, a habit tracker on the side,
+a **Week** view and a Hobonichi-style **Month** view, free-style **pages** (tabs on the right edge) with design blocks, grid-paper spread, a bullet-journal to-do list (Google Tasks) above each day, a habit tracker on the side,
 and decorations: emoji (full library), your own photos as stickers, rich text notes, and freehand pen/highlighter drawing. Fonts are changeable
 (including your own uploaded font file).
 
@@ -18,5 +18,6 @@ Once connected, events come from Google Calendar (read-only) and to-dos from Goo
 ## Roadmap
 1. Layout with fake data (done)
 2. Google sign-in, read Calendar + Tasks, write Tasks (done)
-3. Create/edit events from the planner
-4. Save habits and stickers to the cloud, themes
+3. Monthly view and free-style pages (done)
+4. Create/edit events from the planner
+5. Save habits, stickers and pages to the cloud, themes
