@@ -95,8 +95,9 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
   background-image:
     linear-gradient(to top, var(--grid) 1px, transparent 1px),
     linear-gradient(to left, var(--grid) 1px, transparent 1px);
-  background-size: var(--cell) var(--cell);
+  background-size: var(--cellx, var(--cell)) var(--cell); /* --cellx: set by script so every column holds a whole number of squares */
 }
+.hours, .week-head > div:first-child, .todo-row > div:first-child, .allday-row > div:first-child { background-size: var(--cell) var(--cell); }
 .week-head, .todo-row, .allday-row, .timeline { position: relative; z-index: 1; }
 .week-head, .todo-row, .allday-row { display: grid; grid-template-columns: var(--gutter) repeat(7, minmax(0, 1fr)); }
 .week-head > div + div, .todo-row > div + div, .allday-row > div + div, .day-col { border-left: 1px solid var(--col-line); }
@@ -109,7 +110,7 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
 .week-head .today .dname { color: var(--ink); }
 
 /* to-do (Google Tasks): one line per grid row, bullet in front */
-.todo-row { border-top: 2px solid var(--card-border); }
+.todo-row { }
 .todo-row > div:first-child { font-family: var(--ui); font-size: 11px; font-weight: 500; color: var(--ink-soft); line-height: var(--cell); padding-left: 6px; }
 .todo-line {
   display: flex; align-items: flex-start; gap: 4px; min-height: var(--cell);
@@ -133,7 +134,7 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
 .todo-line.s-migrate .txt { font-style: italic; }
 .todo-line.filler .mark { visibility: hidden; }
 
-.allday-row { border-top: 2px solid var(--card-border); }
+.allday-row { }
 .allday-row > div { min-height: calc(var(--cell) * 2); }
 .allday-row > div:first-child { font-size: 11px; font-weight: 500; color: var(--ink-soft); font-family: var(--ui); padding: 4px 0 0 6px; }
 .chip {
@@ -144,7 +145,6 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
 /* timeline */
 .timeline {
   display: grid; grid-template-columns: var(--gutter) repeat(7, minmax(0, 1fr));
-  border-top: 2px solid var(--card-border);
   height: calc(var(--hour-h) * 17);
 }
 .hours { position: relative; }
@@ -155,7 +155,7 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
     linear-gradient(to top, var(--grid-hour) 1px, transparent 1px),
     linear-gradient(to top, var(--grid) 1px, transparent 1px),
     linear-gradient(to left, var(--grid) 1px, transparent 1px);
-  background-size: 100% var(--hour-h), var(--cell) var(--cell), var(--cell) var(--cell);
+  background-size: 100% var(--hour-h), var(--cell) var(--cell), var(--cellx, var(--cell)) var(--cell);
 }
 .day-col.today { background-color: color-mix(in srgb, var(--accent) 7%, #fff); }
 .event {
@@ -397,3 +397,9 @@ button.sync { background: var(--accent-soft); border: 1.5px solid var(--accent);
 .blk-line { position: relative; }
 .blk-line .ln { position: absolute; left: 0; right: 0; top: 50%; }
 .blk-line .arrowhead { position: absolute; width: 0; height: 0; }
+
+/* Section dividers are painted on top of the grid instead of taking up space, so every section is an exact
+   multiple of the grid square and the grid runs unbroken from the top of the spread to the bottom. */
+.todo-row::before, .allday-row::before, .timeline::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: var(--card-border); z-index: 3; pointer-events: none;
+}

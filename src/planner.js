@@ -2119,7 +2119,7 @@
   function render() {
     renderTitle();
     renderSurfaces();
-    if (activePage === "main") { renderHead(); renderTodos(); renderAllDay(); renderTimeline(); spreadH = $("spread").offsetHeight; }
+    if (activePage === "main") { renderHead(); renderTodos(); renderAllDay(); renderTimeline(); fitGrid(); spreadH = $("spread").offsetHeight; }
     renderGoals(); renderHabits(); // the side panels stay with you on every page
     renderMiniCal(); renderCalList(); renderTabs(); renderInk(); renderStickers();
     updateStatus(); updateDockContext();
@@ -2129,8 +2129,16 @@
   $("prev-btn").onclick = () => navigate(-1);
   $("next-btn").onclick = () => navigate(1);
   document.addEventListener("pointerdown", (e) => { if (!e.target.closest("#page-menu, .ptab")) closeMenu(); });
+  // stretch the squares a hair so each day column holds a whole number of them and the grid meets every divider
+  function fitGrid() {
+    const sp = $("spread");
+    if (sp.hidden || !sp.clientWidth) return;
+    const colW = (sp.clientWidth - 48) / 7 - 1; // inside width of a day column (its left divider is 1px)
+    const n = Math.max(3, Math.round(colW / GRID));
+    sp.style.setProperty("--cellx", colW / n + "px");
+  }
   window.addEventListener("resize", fitPage);
-  new ResizeObserver(() => { if (!$("spread").hidden && $("spread").offsetHeight) { spreadH = $("spread").offsetHeight; fitPage(); } }).observe($("spread"));
+  new ResizeObserver(() => { fitGrid(); if (!$("spread").hidden && $("spread").offsetHeight) { spreadH = $("spread").offsetHeight; fitPage(); } }).observe($("spread"));
 
   document.body.classList.add("tool-move");
   applyAccent();
