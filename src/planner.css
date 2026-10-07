@@ -103,7 +103,7 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
 
 /* to-do (Google Tasks): one line per grid row, bullet in front */
 .todo-row { border-top: 2px solid var(--card-border); }
-.todo-row > div:first-child { font-family: var(--hand); font-size: 15px; color: var(--ink-soft); line-height: var(--cell); padding-left: 6px; }
+.todo-row > div:first-child { font-family: var(--ui); font-size: 11px; font-weight: 500; color: var(--ink-soft); line-height: var(--cell); padding-left: 6px; }
 .todo-line {
   display: flex; align-items: flex-start; gap: 4px; min-height: var(--cell);
   padding: 0 4px 0 2px;
@@ -128,7 +128,7 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
 
 .allday-row { border-top: 2px solid var(--card-border); }
 .allday-row > div { min-height: calc(var(--cell) * 2); }
-.allday-row > div:first-child { font-size: 11px; color: var(--ink-soft); font-family: var(--ui); padding: 4px 0 0 6px; }
+.allday-row > div:first-child { font-size: 11px; font-weight: 500; color: var(--ink-soft); font-family: var(--ui); padding: 4px 0 0 6px; }
 .chip {
   height: 22px; margin: 1px 4px; padding: 0 6px; line-height: 22px; border-radius: 6px;
   font-family: var(--body); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -141,7 +141,7 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
   height: calc(var(--hour-h) * 17);
 }
 .hours { position: relative; }
-.hours .h { position: absolute; right: 6px; font-family: var(--hand); font-size: 16px; line-height: 1; color: var(--ink-soft); margin-top: 3px; }
+.hours .h { position: absolute; right: 6px; font-family: var(--ui); font-size: 11px; font-weight: 500; line-height: 1; color: var(--ink-soft); margin-top: 4px; }
 .day-col {
   position: relative;
   background-image:
@@ -162,7 +162,7 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
 .now-line::before { content: ""; position: absolute; left: -4px; top: -5px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
 
 /* ---------- right column ---------- */
-.goals { list-style: none; margin: 0; padding: 0; font-family: var(--body); font-size: var(--text-size); }
+.goals { list-style: none; margin: 0; padding: 0; font-family: var(--ui); font-size: 13px; }
 .goals li { display: flex; gap: 6px; align-items: flex-start; min-height: var(--cell); line-height: var(--cell); }
 .goals .mark { flex: none; width: 18px; height: var(--cell); background: none; border: 0; padding: 0; cursor: pointer; font-family: var(--ui); font-size: 14px; color: var(--ink); }
 .goals .mark:hover { color: var(--accent); }
@@ -171,8 +171,8 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
 .add-link { background: none; border: 0; padding: 2px 0; cursor: pointer; color: var(--ink-soft); font-family: var(--ui); font-size: 12px; }
 .add-link:hover { color: var(--accent); }
 
-.habit { margin-bottom: 12px; font-family: var(--body); }
-.habit .hhead { display: flex; align-items: center; gap: 6px; font-size: var(--text-size); line-height: 22px; }
+.habit { margin-bottom: 12px; font-family: var(--ui); }
+.habit .hhead { display: flex; align-items: center; gap: 6px; font-size: 13px; line-height: 22px; }
 .habit .name { flex: 1; cursor: text; }
 .habit .hdel { visibility: hidden; background: none; border: 0; color: var(--ink-soft); cursor: pointer; font-size: 16px; padding: 0 2px; }
 .habit:hover .hdel { visibility: visible; }
@@ -241,7 +241,9 @@ h1#title { font-size: 24px; font-weight: 600; letter-spacing: -.01em; margin: 0 
 .tray .thumb .x { position: absolute; top: -6px; right: -6px; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--card-border); background: var(--card-bg); font-size: 10px; line-height: 14px; padding: 0; cursor: pointer; display: none; }
 .tray .thumb:hover .x { display: block; }
 
-.subbar > div { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; justify-content: center; }
+.subbar > div { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; justify-content: center; }
+.subbar .break { flex-basis: 100%; height: 0; }
+.subbar .grp { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; }
 .subbar .tb {
   min-width: 30px; height: 30px; padding: 0 8px; border: 1.5px solid var(--card-border); border-radius: 8px;
   background: var(--paper); font-family: var(--ui); font-size: 14px; cursor: pointer; color: var(--ink);

@@ -524,7 +524,7 @@
   document.addEventListener("selectionchange", () => {
     if (!activeNote) return;
     const sel = getSelection();
-    if (sel.rangeCount && activeNote.body.contains(sel.anchorNode)) savedRange = sel.getRangeAt(0).cloneRange();
+    if (sel.rangeCount && activeNote.body.contains(sel.anchorNode)) { savedRange = sel.getRangeAt(0).cloneRange(); syncFontSelect(); }
   });
 
   function pointerDrag(handle, onStart, onMove, onEnd) {
@@ -621,6 +621,7 @@
   }
 
   function addDeco(item) {
+    if (tool !== "move") setTool("move"); // placing something always returns to Select
     const list = load(stickerKey(), []);
     list.push({ x: 35 + Math.random() * 20, y: 25 + Math.random() * 20, rot: 0, ...item });
     save(stickerKey(), list);
@@ -720,27 +721,46 @@
     document.execCommand(name, false, value);
     activeNote.s.html = activeNote.body.innerHTML;
     activeNote.persist();
+    syncFontSelect();
   }
 
   function fillNoteFontSelect() {
     const sel = document.getElementById("note-font");
     if (!sel) return;
-    sel.replaceChildren(el("option", null, "Font…"));
-    sel.firstChild.value = "";
+    sel.replaceChildren();
     const names = [...new Set([...HAND_FONTS, "Inter"])];
     names.forEach((n) => { const o = el("option", null, n); o.value = n; o.style.fontFamily = fontStack(n, "hand"); sel.append(o); });
     userFonts.forEach((u) => { const o = el("option", null, "★ " + u.name); o.value = u.family; sel.append(o); });
+    syncFontSelect();
   }
+
+  // show the font of the text under the cursor / selection
+  function syncFontSelect() {
+    const sel = document.getElementById("note-font");
+    if (!sel) return;
+    sel.selectedIndex = -1;
+    if (!activeNote) return;
+    const s = getSelection();
+    let node = s.rangeCount ? s.anchorNode : null;
+    if (node && node.nodeType === 3) node = node.parentElement;
+    if (!node || !activeNote.body.contains(node)) node = activeNote.body;
+    const first = getComputedStyle(node).fontFamily.split(",")[0].replace(/["']/g, "").trim();
+    const opt = [...sel.options].find((o) => o.value === first);
+    if (opt) sel.value = first;
+  }
+
+  const group = (...kids) => { const g = el("div", "grp"); g.append(...kids); return g; };
 
   function buildTextBar() {
     const bar = $("textbar");
     const font = el("select"); font.id = "note-font"; font.title = "Font for the selected text";
     font.onchange = () => {
       if (!font.value || !activeNote) return;
+      const chosen = font.value;
       activeNote.body.focus();
       if (savedRange) { const sel = getSelection(); sel.removeAllRanges(); sel.addRange(savedRange); }
-      formatCmd("fontName", font.value);
-      font.value = "";
+      formatCmd("fontName", chosen);
+      font.value = chosen;
     };
     const sizeBtn = (label, delta, title) => toolbarBtn(label, title, () => {
       if (!activeNote) return;
@@ -748,23 +768,26 @@
       activeNote.body.style.fontSize = activeNote.s.size + "px";
       activeNote.persist();
     });
+    const bold = toolbarBtn("B", "Bold", () => formatCmd("bold"));
+    const italic = toolbarBtn("I", "Italic", () => formatCmd("italic"));
+    const under = toolbarBtn("U", "Underline", () => formatCmd("underline"));
+    bold.style.fontWeight = "700"; italic.style.fontStyle = "italic"; under.style.textDecoration = "underline";
     bar.append(
-      font, sizeBtn("A−", -2, "Smaller text"), sizeBtn("A+", 2, "Bigger text"), el("div", "sep"),
-      toolbarBtn("B", "Bold", () => formatCmd("bold")),
-      toolbarBtn("I", "Italic", () => formatCmd("italic")),
-      toolbarBtn("U", "Underline", () => formatCmd("underline")),
-      el("div", "sep"),
-      toolbarBtn("⇤", "Align left", () => formatCmd("justifyLeft")),
-      toolbarBtn("↔", "Center", () => formatCmd("justifyCenter")),
-      toolbarBtn("⇥", "Align right", () => formatCmd("justifyRight")),
-      el("div", "sep"), el("span", "lbl", "Color"),
-      ...INK_COLORS.map((c) => swatch(c, () => formatCmd("foreColor", c))),
-      el("div", "sep"), el("span", "lbl", "Highlight"),
-      ...HILITE_COLORS.map((c) => swatch(c, () => formatCmd("hiliteColor", c))),
-      swatch("transparent", () => formatCmd("hiliteColor", "transparent")),
+      group(font, sizeBtn("A−", -2, "Smaller text"), sizeBtn("A+", 2, "Bigger text")),
+      group(bold, italic, under),
+      group(
+        toolbarBtn("⇤", "Align left", () => formatCmd("justifyLeft")),
+        toolbarBtn("↔", "Center", () => formatCmd("justifyCenter")),
+        toolbarBtn("⇥", "Align right", () => formatCmd("justifyRight")),
+      ),
+      el("div", "break"),
+      group(el("span", "lbl", "Color"), ...INK_COLORS.map((c) => swatch(c, () => formatCmd("foreColor", c)))),
+      group(
+        el("span", "lbl", "Highlight"),
+        ...HILITE_COLORS.map((c) => swatch(c, () => formatCmd("hiliteColor", c))),
+        swatch("transparent", () => formatCmd("hiliteColor", "transparent")),
+      ),
     );
-    // bold/italic/underline need their own look
-    bar.children[5].style.fontWeight = "700"; bar.children[6].style.fontStyle = "italic"; bar.children[7].style.textDecoration = "underline";
     fillNoteFontSelect();
   }
 
@@ -799,7 +822,7 @@
     $("subbar").hidden = $("textbar").hidden && $("drawbar").hidden;
   }
 
-  function setActiveNote(n) { activeNote = n; if (!n) savedRange = null; updateSubbar(); }
+  function setActiveNote(n) { activeNote = n; if (!n) savedRange = null; updateSubbar(); syncFontSelect(); }
 
   function setTool(t) {
     tool = t;
@@ -867,16 +890,17 @@
   async function renderTray() {
     const tray = $("tray");
     tray.replaceChildren();
-    [["move", "☝ Move"], ["pen", "✏️ Pen"], ["marker", "🖍 Highlighter"], ["eraser", "⌫ Eraser"]].forEach(([id, label]) => {
+    [["move", "☝ Select"], ["pen", "✏️ Pen"], ["marker", "🖍 Highlighter"], ["eraser", "⌫ Eraser"]].forEach(([id, label]) => {
       const b = el("button", "pill" + (tool === id ? " on" : ""), label);
-      b.dataset.tool = id; b.onclick = () => setTool(id);
+      b.dataset.tool = id;
+      b.title = id === "move" ? "Move, resize and edit decorations" : "Click again to switch the tool off";
+      b.onclick = () => setTool(tool === id && id !== "move" ? "move" : id);
       tray.append(b);
     });
     tray.append(el("div", "sep"));
 
     const addText = el("button", "pill", "Aa Text");
     addText.onclick = () => {
-      if (tool !== "move") setTool("move");
       addDeco({ kind: "text", html: "type here", size: 24, w: 220 });
       const notes = document.querySelectorAll(".deco-text .note");
       const last = notes[notes.length - 1];
