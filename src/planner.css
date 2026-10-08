@@ -439,3 +439,33 @@ button.sync { background: var(--accent-soft); border: 1.5px solid var(--accent);
 .cm-item:hover { background: var(--accent-soft); }
 .cm-ico { width: 18px; text-align: center; flex: none; }
 .toast { position: fixed; bottom: 26px; left: 50%; transform: translateX(-50%); z-index: 60; background: #2b2b2b; color: #fff; padding: 8px 18px; border-radius: 999px; font-size: 13px; font-family: var(--ui); box-shadow: 0 4px 14px rgba(0,0,0,.3); }
+
+/* ---------- creating events ---------- */
+.day-col { cursor: cell; }
+.event.ghost { background: var(--accent-soft2); border: 1.5px dashed var(--accent); color: var(--ink); pointer-events: none; z-index: 3; }
+.allday-row > div:not(:first-child) { cursor: cell; }
+.event-form {
+  position: fixed; z-index: 42; width: 350px; max-height: calc(100vh - 20px); overflow-y: auto;
+  background: var(--card-bg); border: 1.5px solid var(--card-border); border-radius: 14px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.24); font-family: var(--ui); font-size: 13px; color: var(--ink); padding: 14px 16px;
+}
+.event-form .ec-close { top: 4px; right: 8px; }
+.ef-heading { margin: 0 0 6px; font-size: 16px; }
+.event-form .ef-title { width: 100%; font: inherit; font-size: 18px; font-weight: 600; border: 0; border-bottom: 2px solid var(--card-border); background: transparent; padding: 4px 24px 6px 0; outline: 0; margin-bottom: 10px; }
+.event-form .ef-title:focus { border-bottom-color: var(--accent); }
+.ef-field { display: block; margin: 8px 0; }
+.ef-label { display: block; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-soft); margin-bottom: 3px; }
+.event-form input[type=text], .event-form input[type=date], .event-form input[type=time], .event-form select, .event-form textarea {
+  font: inherit; width: 100%; border: 1.5px solid var(--card-border); border-radius: 8px; padding: 5px 8px; background: var(--paper); color: inherit;
+}
+.event-form textarea { resize: vertical; }
+.ef-times { display: flex; align-items: center; gap: 6px; }
+.ef-allday { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ef-check { display: flex; align-items: center; gap: 8px; margin: 4px 0 2px; cursor: pointer; }
+.ef-cal { display: flex; align-items: center; gap: 8px; }
+.ef-dot { flex: none; width: 14px; height: 14px; border-radius: 4px; display: inline-block; border: 1px solid rgba(0,0,0,.15); }
+.ef-error { color: #b3261e; min-height: 0; margin-top: 6px; }
+.ef-actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.ef-more { color: var(--accent); font-weight: 600; text-decoration: none; font-size: 12.5px; }
+.ef-more:hover { text-decoration: underline; }
+.ef-actions .pill:disabled { opacity: .6; cursor: default; }

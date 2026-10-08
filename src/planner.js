@@ -396,6 +396,7 @@
     row.replaceChildren(el("div", null, "all-day"));
     for (let i = 0; i < 7; i++) {
       const cell = el("div");
+      cell.onclick = (ev) => { if (!decorating && !ev.target.closest(".chip")) beginCreate({ date: addDays(weekStart, i), allDay: true, anchor: cell }); };
       allDayOn(addDays(weekStart, i)).filter((e) => !hiddenCals.has(e.cal)).forEach((e) => {
         const chip = el("div", "chip", e.title);
         chip.style.background = colorOf(e.cal);
@@ -445,6 +446,7 @@
     for (let i = 0; i < 7; i++) {
       const d = addDays(weekStart, i);
       const col = el("div", "day-col" + (sameDay(d, now) ? " today" : ""));
+      col.onpointerdown = (ev) => { if (!decorating && ev.button === 0 && !ev.target.closest(".event")) startCreateDrag(ev, col, d); };
       const evs = eventsOn(d)
         .filter((e) => !hiddenCals.has(e.cal) && e.end > START_HOUR && e.start < END_HOUR)
         .map((e) => ({ ...e, start: Math.max(e.start, START_HOUR), end: Math.min(e.end, END_HOUR) }));
@@ -1751,7 +1753,7 @@
 
     const connected = store.mode === "google";
     if (connected && !editingClient) {
-      panel.append(el("p", null, "Connected. Events are read from your Google Calendars and to-dos come from Google Tasks, so checking things off here updates Google Tasks too."));
+      panel.append(el("p", null, "Connected. Your Google Calendar events show on the schedule, and to-dos come from Google Tasks, so checking things off here updates Google Tasks too. To add an event, drag down a day on the schedule, click an all-day box, or use ＋ Event."));
       panel.append(el("p", "muted", "Only to-dos that have a due date show up on the spread. Calendars are shown the same way Google Calendar shows them (use the calendar list on the left to turn them on or off)."));
       msg();
       const row = el("div", "row");
@@ -1781,7 +1783,7 @@
     const li = (html) => { const x = el("li"); x.innerHTML = html; steps.append(x); return x; };
     li('Open <b>console.cloud.google.com</b> and create a project (any name).');
     li('Go to <b>APIs &amp; Services → Library</b> and enable <b>Google Calendar API</b> and <b>Google Tasks API</b>.');
-    li('Set up the <b>OAuth consent screen</b> (type <b>External</b>) and add your own Google account as a <b>test user</b>.');
+    li('Set up the <b>OAuth consent screen</b> (type <b>External</b>) and add your own Google account as a <b>test user</b>. Under <b>Data Access</b>, add the scopes <code>calendar.events</code>, <code>calendar.calendarlist.readonly</code> and <code>tasks</code>.');
     li('Go to <b>Credentials → Create credentials → OAuth client ID</b>, choose <b>Web application</b>, and add this under <b>Authorized redirect URIs</b>:');
     const box = el("code", "copybox", redirect);
     steps.lastChild.append(box);
@@ -2025,6 +2027,195 @@
   document.addEventListener("pointerdown", (ev) => { if (!ev.target.closest("#event-card, #ctx-menu, .event, .chip")) closeEventUI(); });
   document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeEventUI(); });
   window.addEventListener("scroll", closeEventUI, true);
+
+  // ---------- creating events ----------
+  const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const hhmm = (h) => { const t = Math.round(h * 60); return `${pad2(Math.floor(t / 60) % 24)}:${pad2(t % 60)}`; };
+  const toHours = (v) => { const [h, m] = v.split(":").map(Number); return h + m / 60; };
+  const writableCalendars = () => sortedCalendars(store.calendars).filter((c) => c.role === "owner" || c.role === "writer");
+
+  let formGhost = null, formDirty = false;
+  function closeEventForm() {
+    $("event-form").hidden = true;
+    if (formGhost) { formGhost.remove(); formGhost = null; }
+  }
+
+  // Creating needs your Google account; in the demo we just point you there.
+  function beginCreate(opts) {
+    if (store.mode !== "google") { toast("Connect Google to add events"); return false; }
+    closeEventUI(); closeEventForm();
+    openEventForm(opts);
+    return true;
+  }
+
+  // Drag down a day column to choose a time (15-minute steps). A plain click makes a one-hour event.
+  function startCreateDrag(ev, col, date) {
+    if (store.mode !== "google") { toast("Connect Google to add events"); return; }
+    ev.preventDefault();
+    closeEventUI(); closeEventForm();
+    const rect = col.getBoundingClientRect();
+    const hourAt = (e) => clamp(START_HOUR + (e.clientY - rect.top) / HOUR_H, START_HOUR, END_HOUR);
+    const a = hourAt(ev);
+    let b = a, moved = false;
+    const ghost = el("div", "event ghost");
+    col.append(ghost);
+    formGhost = ghost;
+    const range = () => {
+      if (!moved) { const s0 = Math.min(Math.floor(a * 2) / 2, END_HOUR - 1); return [s0, s0 + 1]; }
+      const lo = Math.floor(Math.min(a, b) * 4) / 4;
+      return [lo, Math.min(Math.max(Math.ceil(Math.max(a, b) * 4) / 4, lo + 0.25), END_HOUR)];
+    };
+    const paint = () => {
+      const [s0, e0] = range();
+      ghost.style.top = (s0 - START_HOUR) * HOUR_H + "px";
+      ghost.style.height = Math.max((e0 - s0) * HOUR_H - 2, 20) + "px";
+      ghost.style.left = "1%"; ghost.style.width = "98%";
+      ghost.replaceChildren(el("div", "t", "(No title)"), el("div", "time", fmtRange(s0, e0)));
+    };
+    paint();
+    col.setPointerCapture(ev.pointerId);
+    col.onpointermove = (m) => { b = hourAt(m); if (Math.abs(m.clientY - ev.clientY) > 5) moved = true; paint(); };
+    col.onpointerup = () => {
+      col.onpointermove = null; col.onpointerup = null;
+      const [s0, e0] = range();
+      openEventForm({ date, start: s0, end: e0, anchor: ghost });
+    };
+  }
+
+  // the Google Calendar page for the full editor (guests, repeats, Meet...), prefilled with what you've typed
+  function fullEditorUrl(f) {
+    const ymd = (d) => `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`;
+    let dates;
+    if (f.allDay) dates = `${ymd(new Date(f.date + "T00:00:00"))}/${ymd(addDays(new Date((f.until || f.date) + "T00:00:00"), 1))}`;
+    else dates = `${f.date.replace(/-/g, "")}T${(f.start || "09:00").replace(":", "")}00/${f.date.replace(/-/g, "")}T${(f.end || "10:00").replace(":", "")}00`;
+    const q = new URLSearchParams({ action: "TEMPLATE", text: f.title, dates, details: f.description, location: f.location, ctz: TZ });
+    return "https://calendar.google.com/calendar/render?" + q;
+  }
+
+  function openEventForm({ date, start, end, allDay, anchor }) {
+    const form = $("event-form");
+    form.replaceChildren();
+    formDirty = false;
+    const cals = writableCalendars();
+    const close = el("button", "ec-close", "×"); close.title = "Cancel"; close.onclick = closeEventForm;
+    if (!cals.length) {
+      form.append(close, el("h3", "ef-heading", "Can't add an event"), el("p", "muted", "None of your calendars allow adding events."));
+      form.hidden = false; placeForm(form, anchor);
+      return;
+    }
+
+    const lastId = load("lastCalendar", null);
+    let calId = (cals.find((c) => c.id === lastId) || cals.find((c) => c.primary) || cals[0]).id;
+    const field = (label, input, cls) => { const r = el("label", "ef-field" + (cls ? " " + cls : "")); r.append(el("span", "ef-label", label), input); return r; };
+    const input = (type, value, extra = {}) => { const i = el("input"); i.type = type; i.value = value; Object.assign(i, extra); return i; };
+
+    const dateKeyStr = dateKey(date);
+    const title = input("text", "", { placeholder: "Add title" }); title.className = "ef-title";
+    const dateIn = input("date", dateKeyStr);
+    const startIn = input("time", hhmm(start ?? 9), { step: 900 });
+    const endIn = input("time", hhmm(end ?? (start ?? 9) + 1), { step: 900 });
+    const untilIn = input("date", dateKeyStr);
+    const allIn = input("checkbox", ""); allIn.checked = !!allDay;
+    const where = input("text", "", { placeholder: "Add location" });
+    const what = el("textarea"); what.placeholder = "Add description"; what.rows = 3;
+    const calSel = el("select");
+    cals.forEach((c) => { const o = el("option", null, c.name); o.value = c.id; if (c.id === calId) o.selected = true; calSel.append(o); });
+    const dot = el("i", "ef-dot");
+    const paintDot = () => { dot.style.background = colorOf(calId); };
+    calSel.onchange = () => { calId = calSel.value; paintDot(); };
+    paintDot();
+
+    const timeRow = el("div", "ef-times"); timeRow.append(startIn, el("span", null, "–"), endIn);
+    const timedBox = el("div", "ef-timed"); timedBox.append(field("Date", dateIn), field("Time", timeRow));
+    const allBox = el("div", "ef-allday"); allBox.append(field("From", dateIn.cloneNode()), field("Until", untilIn));
+    // keep one set of date inputs: the all-day box reuses the same date value
+    const allFrom = allBox.querySelector("input");
+    allFrom.value = dateKeyStr;
+    allFrom.oninput = () => { dateIn.value = allFrom.value; if (untilIn.value < allFrom.value) untilIn.value = allFrom.value; };
+    dateIn.oninput = () => { allFrom.value = dateIn.value; };
+    const sync = () => { timedBox.hidden = allIn.checked; allBox.hidden = !allIn.checked; };
+    allIn.onchange = sync; sync();
+
+    const allRow = el("label", "ef-check"); allRow.append(allIn, el("span", null, "All day"));
+    const calRow = el("div", "ef-cal"); calRow.append(dot, calSel);
+    const err = el("div", "ef-error");
+    const saveBtn = el("button", "pill on", "Save");
+    const more = el("a", "ef-more", "More options ↗"); more.target = "_blank"; more.rel = "noopener noreferrer";
+    const current = () => ({ title: title.value.trim(), date: dateIn.value, start: startIn.value, end: endIn.value, allDay: allIn.checked, until: untilIn.value, location: where.value.trim(), description: what.value.trim() });
+    more.onclick = () => { more.href = fullEditorUrl(current()); setTimeout(closeEventForm, 0); };
+    more.href = fullEditorUrl(current());
+
+    const submit = async () => {
+      const f = current();
+      err.textContent = "";
+      if (!f.date) { err.textContent = "Pick a date."; return; }
+      const body = { summary: f.title || "(No title)" };
+      if (f.location) body.location = f.location;
+      if (f.description) body.description = f.description;
+      if (f.allDay) {
+        if (f.until && f.until < f.date) { err.textContent = "\"Until\" can't be before the start date."; return; }
+        body.start = { date: f.date };
+        body.end = { date: dateKey(addDays(new Date((f.until || f.date) + "T00:00:00"), 1)) }; // Google's all-day end is exclusive
+      } else {
+        if (!f.start || !f.end) { err.textContent = "Pick a start and end time."; return; }
+        if (f.end <= f.start) { err.textContent = "The event has to end after it starts."; return; }
+        body.start = { dateTime: `${f.date}T${f.start}:00`, timeZone: TZ };
+        body.end = { dateTime: `${f.date}T${f.end}:00`, timeZone: TZ };
+      }
+      saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+      try {
+        if (!GoogleApi.canWrite()) { err.textContent = "Google will ask you to allow adding events (one time)…"; await GoogleApi.signIn(); err.textContent = ""; }
+        let created;
+        try { created = await GoogleApi.insertEvent(calId, body); }
+        catch (e) { // an older sign-in may not include the new permission: ask once, then retry
+          if (!/insufficient|scope/i.test(e.message || "")) throw e;
+          await GoogleApi.signIn();
+          created = await GoogleApi.insertEvent(calId, body);
+        }
+        save("lastCalendar", calId);
+        if (hiddenCals.has(calId)) { hiddenCals.delete(calId); save(hiddenKey(), [...hiddenCals]); loadData(); } // you'd want to see it
+        else { mapEvent(calId, created, store.events, store.allDay, currentRange()); renderData(); }
+        closeEventForm();
+        toast(`Added to ${calName(calId) || "your calendar"}`);
+      } catch (e) {
+        err.textContent = (e && e.message) || "Couldn't save the event.";
+        saveBtn.disabled = false; saveBtn.textContent = "Save";
+      }
+    };
+    saveBtn.onclick = submit;
+    const cancel = el("button", "pill", "Cancel"); cancel.onclick = closeEventForm;
+    form.onkeydown = (e) => { if (e.key === "Enter" && !["TEXTAREA", "A", "BUTTON"].includes(e.target.tagName)) { e.preventDefault(); submit(); } };
+    form.oninput = () => { formDirty = true; more.href = fullEditorUrl(current()); };
+
+    const actions = el("div", "ef-actions"); actions.append(more, el("span", "grow"), cancel, saveBtn);
+    form.append(close, title, allRow, timedBox, allBox, field("Calendar", calRow), field("Location", where), field("Description", what), err, actions);
+    form.hidden = false;
+    placeForm(form, anchor);
+    title.focus();
+  }
+
+  function placeForm(form, anchor) {
+    const r = anchor.getBoundingClientRect(), w = form.offsetWidth, h = form.offsetHeight;
+    let left = r.right + 10;
+    if (left + w > window.innerWidth - 10) left = r.left - w - 10;
+    if (left < 10) left = clamp(r.left, 10, window.innerWidth - w - 10);
+    form.style.left = left + "px";
+    form.style.top = clamp(r.top, 10, Math.max(10, window.innerHeight - h - 10)) + "px";
+  }
+
+  // "＋ Event" in the top bar: starts at the next full hour today (or the first day of the week you're viewing)
+  function newEventFromButton() {
+    const now = new Date();
+    const inWeek = now >= weekStart && now < addDays(weekStart, 7);
+    const day = inWeek ? now : weekStart;
+    const start = inWeek ? clamp(now.getHours() + 1, START_HOUR, END_HOUR - 1) : 9;
+    beginCreate({ date: day, start, end: start + 1, anchor: $("new-event-btn") });
+  }
+  document.addEventListener("pointerdown", (ev) => {
+    if (!$("event-form").hidden && !formDirty && !ev.target.closest("#event-form, .ghost, #new-event-btn, .allday-row")) closeEventForm();
+  });
+  document.addEventListener("keydown", (ev) => { if (ev.key === "Escape") closeEventForm(); });
 
   // ---------- free-style pages (the tabs on the right edge) ----------
   // A page is exactly as big as the weekly spread, so flipping between them is seamless.
@@ -2311,7 +2502,7 @@
   // ---------- navigation ----------
   function afterNavigate() {
     activePage = "main";
-    selectDeco(null); setActiveNote(null); closeMenu();
+    selectDeco(null); setActiveNote(null); closeMenu(); closeEventForm();
     clearRangeData();
     render();
     loadData();
@@ -2338,6 +2529,7 @@
     updateStatus(); updateDockContext();
   }
 
+  $("new-event-btn").onclick = newEventFromButton;
   $("today-btn").onclick = () => navigate(0);
   $("prev-btn").onclick = () => navigate(-1);
   $("next-btn").onclick = () => navigate(1);

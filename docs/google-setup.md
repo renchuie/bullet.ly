@@ -7,10 +7,10 @@ bullet.ly talks to Google through **your own** Google Cloud project. It's free, 
 ## What the extension can do
 | | Permission asked | Why |
 |---|---|---|
-| Google Calendar | **read-only** | show your events |
+| Google Calendar | view and **add** events (never edits or deletes) | show your events and let you create new ones |
 | Google Tasks | read and write | show to-dos on each day, check them off, add and rename them |
 
-(Editing events from the planner will ask for more permission later, when that feature exists.)
+(Editing and deleting events from the planner would need no extra permission, but they aren't built yet.)
 
 ## One-time setup
 1. Load the extension in Firefox (see the main README) and click **Connect Google** in the top bar.
@@ -21,12 +21,21 @@ bullet.ly talks to Google through **your own** Google Cloud project. It's free, 
    - User type: **External**.
    - Fill in the app name (e.g. "bullet.ly") and your email.
    - Under **Test users**, add your own Google account.
+   - Under **Data Access** (or "Scopes"), add these three scopes:
+     `https://www.googleapis.com/auth/calendar.events`,
+     `https://www.googleapis.com/auth/calendar.calendarlist.readonly` and
+     `https://www.googleapis.com/auth/tasks`.
 5. **Credentials → Create credentials → OAuth client ID**:
    - Application type: **Web application**.
    - **Authorized redirect URIs**: paste the redirect URL from step 1.
 6. Copy the **Client ID** (ends in `.apps.googleusercontent.com`), paste it into the panel and click
    **Save & sign in**. Google will warn the app isn't verified (it's your own app). Click
    **Advanced → Go to bullet.ly** and tick **both** permission boxes.
+
+## If you connected before event creation existed
+bullet.ly now asks for permission to add events. Add the scopes above in Google Cloud (Data Access), then use
+the **Sign in again** button in the top bar and approve the new permission. Until then everything else keeps working;
+adding an event will ask you to approve it the first time.
 
 ## Good to know
 - **Weekly re-login:** while the Google app is in *Testing* mode, Google expires your consent about

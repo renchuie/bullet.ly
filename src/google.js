@@ -4,11 +4,13 @@
 // is your own Client ID (no secret). Access tokens last about an hour; the extension renews them
 // silently while you're still signed in to Google in this Firefox profile.
 const GoogleApi = (() => {
-  // Calendar is read-only for now; Tasks is read/write so you can check things off.
+  // Calendar: view and add events (and see your list of calendars). Tasks: read/write so you can check things off.
   const SCOPES = [
-    "https://www.googleapis.com/auth/calendar.readonly",
+    "https://www.googleapis.com/auth/calendar.events",
+    "https://www.googleapis.com/auth/calendar.calendarlist.readonly",
     "https://www.googleapis.com/auth/tasks",
   ];
+  const EVENTS_SCOPE = SCOPES[0];
   const CAL = "https://www.googleapis.com/calendar/v3";
   const TASKS = "https://tasks.googleapis.com/tasks/v1";
 
@@ -27,6 +29,8 @@ const GoogleApi = (() => {
   const redirectUrl = () => (available ? browser.identity.getRedirectURL() : "");
   const isConfigured = () => !!clientId();
   const wasConnected = () => lsGet("gConnected") === "1";
+  // did this sign-in include permission to add events? (people who connected earlier only allowed viewing)
+  const canWrite = () => (lsGet("gScopes") || "").split(" ").includes(EVENTS_SCOPE);
 
   // ----- tokens -----
   let token = null, expiresAt = 0, inflight = null;
@@ -67,6 +71,7 @@ const GoogleApi = (() => {
     if (!SCOPES.every((s) => granted.includes(s))) {
       throw new AuthError("Please tick every permission box on Google's screen (Calendar and Tasks), then try again.");
     }
+    lsSet("gScopes", granted.join(" "));
     token = frag.get("access_token");
     expiresAt = Date.now() + (Number(frag.get("expires_in")) || 3600) * 1000;
     lsSet("gToken", JSON.stringify({ token, expiresAt }));
@@ -85,7 +90,7 @@ const GoogleApi = (() => {
   async function signOut() {
     const t = token;
     token = null; expiresAt = 0;
-    ["gToken", "gConnected", "gEmail"].forEach(lsDel);
+    ["gToken", "gConnected", "gEmail", "gScopes"].forEach(lsDel);
     if (t) { try { await fetch("https://oauth2.googleapis.com/revoke?token=" + encodeURIComponent(t), { method: "POST" }); } catch {} }
   }
 
@@ -140,6 +145,10 @@ const GoogleApi = (() => {
     return out;
   }
 
+  // sendUpdates=none: nobody gets an email (the planner doesn't add guests)
+  const insertEvent = (calendarId, body) =>
+    api(`${CAL}/calendars/${encodeURIComponent(calendarId)}/events?${qs({ sendUpdates: "none" })}`, { method: "POST", body });
+
   // ----- Tasks -----
   async function listTaskLists() {
     const data = await api(`${TASKS}/users/@me/lists?maxResults=100`);
@@ -166,8 +175,8 @@ const GoogleApi = (() => {
 
   return {
     available, AuthError, SCOPES,
-    clientId, setClientId, setEmail, email, redirectUrl, isConfigured, wasConnected,
+    clientId, setClientId, setEmail, email, redirectUrl, isConfigured, wasConnected, canWrite,
     signIn, signOut,
-    listCalendars, listEvents, listTaskLists, listTasks, createTask, patchTask, deleteTask,
+    listCalendars, listEvents, insertEvent, listTaskLists, listTasks, createTask, patchTask, deleteTask,
   };
 })();

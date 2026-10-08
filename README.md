@@ -6,7 +6,7 @@ and decorations: emoji (full library), your own photos as stickers, rich text no
 (including your own uploaded font file).
 
 **Status:** prototype. It shows demo data until you connect Google (see [docs/google-setup.md](docs/google-setup.md)).
-Once connected, events come from Google Calendar (read-only) and to-dos from Google Tasks (read/write).
+Once connected, events come from Google Calendar (you can add new ones) and to-dos from Google Tasks (read/write).
 
 ## Try it in Firefox
 1. Open `about:debugging#/runtime/this-firefox`
@@ -20,5 +20,5 @@ Once connected, events come from Google Calendar (read-only) and to-dos from Goo
 2. Google sign-in, read Calendar + Tasks, write Tasks (done)
 3. Free-style pages, color mask, accent color (done)
 4. Event details card and right-click menu (done)
-5. Create/edit events from the planner
+5. Create events from the planner (done); edit and delete events
 6. Save habits, stickers and pages to the cloud, themes

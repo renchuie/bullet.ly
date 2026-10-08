@@ -38,7 +38,8 @@ sign in (**Advanced → Go to bullet.ly**). Unverified apps are capped at 100 us
 
 ## If you ever do submit for verification
 You'd also need a short justification for each scope. Suggested wording:
-- `calendar.readonly`: "Displays the user's calendar events in a weekly planner view. Events are only shown to the user in their own browser; nothing is stored or sent elsewhere."
+- `calendar.events`: "Displays the user's calendar events in a weekly planner view and creates a new event only when the user saves one in the planner. Nothing is stored or sent anywhere except to the user's own Google Calendar."
+- `calendar.calendarlist.readonly`: "Lists the user's calendars (names and colors) so events can be shown in their calendar's color and the user can choose which calendar a new event is added to."
 - `tasks`: "Shows the user's to-dos on their due date and lets them mark tasks complete, add and rename tasks from the planner."
 
 ## If Google rejects the domain
